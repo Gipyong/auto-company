@@ -5,8 +5,6 @@ import lombok.*;
 import java.time.*;
 import java.util.*;
 
-
-
 @Entity
 @Table(name = "employees")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -23,17 +21,16 @@ public class Employee {
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Role role; // PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER
+    private Role role;
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Rank rank = Rank.INTERN; // INTERN, JUNIOR, MID, SENIOR, LEAD
+    private Rank rank = Rank.INTERN;
     
     @Column(nullable = false)
     private int level = 1;
     
     private String aiModel = "llama3:8b";
-    
     private String dockerContainerId;
     
     @Enumerated(EnumType.STRING)
@@ -41,13 +38,9 @@ public class Employee {
     private Status status = Status.IDLE;
     
     private int totalTasks = 0;
-    
     private int completedTasks = 0;
-    
     private float avgRating = 0.0f;
-    
     private String systemPrompt;
-    
     private LocalDateTime createdAt = LocalDateTime.now();
     
     @ElementCollection
@@ -58,5 +51,11 @@ public class Employee {
     @ElementCollection
     @CollectionTable(name = "employee_feedback", joinColumns = @JoinColumn(name = "employee_id"))
     private List<String> feedbackComments = new ArrayList<>();
+    
+    // Lombok generates getters, but explicit for compile safety
+    public float getAvgRating() { return avgRating; }
+    public int getCompletedTasks() { return completedTasks; }
+    public int getTotalTasks() { return totalTasks; }
+    public int getLevel() { return level; }
+    public com.autocompany.entity.enums.Rank getRank() { return rank; }
 }
-

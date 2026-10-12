@@ -1,4 +1,5 @@
 package com.autocompany.service;
+import com.autocompany.entity.enums.Rank;
 
 import com.autocompany.entity.Employee;
 import com.autocompany.entity.PeerRating;
@@ -80,21 +81,12 @@ public class RatingEngineService {
         Employee employee = employeeRepository.findById(employeeId).orElseThrow();
         List<PeerRating> ratings = ratingRepository.findByRatedEmployeeId(employeeId);
         
-        return RatingSummary.builder()
-                .employeeId(employeeId)
-                .name(employee.getName())
-                .role(employee.getRole().name())
-                .rank(employee.getRank().name())
-                .level(employee.getLevel())
-                .totalRatings(ratings.size())
-                .avgRating(employee.getAvgRating())
-                .completedTasks(employee.getCompletedTasks())
-                .totalTasks(employee.getTotalTasks())
-                .recentRatings(ratings.stream()
-                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                        .limit(10)
-                        .toList())
-                .build();
+        return new RatingSummary(employeeId, employee.getName(), 
+                (employee.getRole() != null ? employee.getRole().name() : ""),
+                (employee.getRank() != null ? employee.getRank().name() : "INTERN"),
+                employee.getLevel(), ratings.size(), employee.getAvgRating(),
+                employee.getCompletedTasks(), employee.getTotalTasks(),
+                ratings.stream().limit(10).toList());
     }
 
     @lombok.Data
@@ -110,5 +102,20 @@ public class RatingEngineService {
         private int completedTasks;
         private int totalTasks;
         private List<PeerRating> recentRatings;
+
+        public RatingSummary(UUID employeeId, String name, String role, String rank, int level,
+                             int totalRatings, float avgRating, int completedTasks, int totalTasks,
+                             List<PeerRating> recentRatings) {
+            this.employeeId = employeeId;
+            this.name = name;
+            this.role = role;
+            this.rank = rank;
+            this.level = level;
+            this.totalRatings = totalRatings;
+            this.avgRating = avgRating;
+            this.completedTasks = completedTasks;
+            this.totalTasks = totalTasks;
+            this.recentRatings = recentRatings;
+        }
     }
 }
