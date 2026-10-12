@@ -1,96 +1,108 @@
 # AGENTS.md
 
-AutoCompany: AI 직원 / 업무 / 평가를 다루는 시스템.
-Java 21 Spring Boot 백엔드(Maven)이며, **배포 단위는 Docker 이미지**다.
-검증은 QEMU VM에서, 사용자 직접 테스트는 호스트의 Docker에서 한다.
+## Project
 
-작업 전 이 파일을 먼저 읽는다. 현재 구현 범위는 `README.md`, 설계는 `docs/DESIGN.md`가 기준이다.
+- Project: AutoCompany — a system for AI employees, tasks, and evaluation
+- Tech stack: Java 21, Spring Boot, Maven, PostgreSQL
+- Deployment unit: Docker image
+- Automated validation environment: QEMU VM
+- Human acceptance-testing environment: Docker on the host
+- Source of truth for implemented features: `README.md`
+- Source of truth for architecture and database design: `docs/DESIGN.md`
 
-## 프로젝트 구조
+These instructions are intended to apply across coding agents, including Codex, OpenCode, and Pi. Verify actual paths, files, commands, and service status in the repository and runtime environment before relying on them.
 
-| 경로 | 설명 |
-|---|---|
-| `backend/` | Spring Boot 백엔드 (경로 확인 필요, TODO 참고) |
-| `Dockerfile`, `docker-compose.yml` | 앱 + PostgreSQL 배포 정의 (없으면 만들어야 함, TODO 참고) |
-| `docs/DESIGN.md` | 설계 문서 (DB 스키마는 Section 2) |
-| `qemu-test/run.sh`, `qemu-test/arm64.qcow2` | 검증용 QEMU ARM64 VM |
+## Rules That Always Apply
 
-## 환경별 역할
+1. Stay within the requested scope. Do not include unrelated refactoring or dependency changes.
+2. Prefer established patterns in the existing code and documentation. If a request conflicts with the design, investigate the impact and possible alternatives.
+3. Preserve the user's uncommitted changes. Never overwrite or revert them without permission.
+4. Never report a test as passing or behavior as verified unless you actually ran the test or verified the behavior.
+5. Never put secrets, credentials, or personal data in source code, logs, documentation, images, or commits.
+6. Do not guess paths, ports, service names, or snapshot names. Verify them before use.
+7. Do not modify this file unless the user explicitly asks you to.
 
-| 단계 | 위치 | 내용 |
-|---|---|---|
-| 단위/통합 테스트 | QEMU VM | `mvn clean compile test -B` |
-| 이미지 검증 | QEMU VM | `docker build` → `docker compose up` → curl 스모크 테스트 |
-| 사용자 직접 테스트 | 호스트 Docker | `docker compose up` 후 API 호출 |
+## Workflow
 
-Java/Maven/PostgreSQL은 호스트에 설치하지 않는다. 빌드와 테스트는 VM 또는 Docker 안에서만 수행한다.
+### 1. Before Starting Work
 
-## 명령어
+- Check `git status`, the current branch, the repository root, and the directory structure.
+- Read relevant source files and tests. Also read `README.md` and `docs/DESIGN.md` when the task affects behavior, APIs, the database, or architecture.
+- Verify the actual locations and usage of `pom.xml`, Docker configuration, and QEMU scripts.
+- Check whether required environments and services, including the VM, Docker, and the database, are ready.
+- Investigate unknowns in the repository and runtime environment first. If a blocking issue remains unresolved, report what you verified and what action is needed.
 
-### 단위/통합 테스트 (QEMU VM 안)
+### 2. Design, Code, and Documentation
+
+- If an API, data model, database schema, domain behavior, or system structure changes, update `docs/DESIGN.md` **before implementing the change**.
+- Do not update the design document unnecessarily for bug fixes or internal refactoring that do not change the design. However, correct the documentation if it no longer matches actual behavior.
+- Add or update relevant tests for code changes. If you cannot add a test, explain why and report the remaining risk.
+- Document only implemented features and currently valid instructions in `README.md`. Never describe an unimplemented feature as implemented.
+- Update relevant documentation when APIs, execution procedures, configuration, or user-visible behavior change.
+
+### 3. Git Isolation
+
+- Make code changes in a dedicated `git worktree` and task branch. Place the worktree under `.worktree/` at the repository root, and verify that `.worktree/` is listed in `.gitignore`.
+- If the current working directory is already the worktree for this task, use it; do not create a nested worktree. Read-only investigation does not require a worktree.
+- Before deleting or cleaning up an existing branch, worktree, or user change, verify its state and which task or person owns it.
+- Do not commit until the tests pass. If tests fail or cannot run, record the status and reason; never claim they passed.
+- Do not work directly on `main` or merge unverified changes. Commit, merge, and push only as permitted by the user's request and project policy.
+
+## Build and Validation
+
+Run validation in the QEMU VM. Do not install Java, Maven, or PostgreSQL on the host. If the VM or a required service is unavailable, do not silently substitute host-side validation; report why the required validation could not be run.
+
+1. Verify that the QEMU VM is available and confirm the project path inside it.
+2. Locate the actual Maven project and verify its test configuration.
+3. Run the full build and test suite inside the VM.
+4. If the Docker validation environment is ready, build the image, start the Compose services, and run an API smoke test inside the VM.
+5. Review the logs and `git diff`. Check for inconsistencies among code, tests, documentation, and configuration.
+
+After verifying the actual `pom.xml` location and project configuration, run this default full-validation command:
+
 ```bash
-mvn clean compile test -B                        # 전체 빌드 + 테스트
-mvn test -Dtest=CostPerformanceRouterServiceTest # 단일 테스트
+mvn clean compile test -B
+```
+
+The following are examples of single-test commands. Verify that each test class exists before running it:
+
+```bash
+mvn test -Dtest=CostPerformanceRouterServiceTest
 mvn test -Dtest=RatingEngineServiceTest
 ```
 
-### 이미지 검증 (QEMU VM 안, Docker 필요)
+The following are examples of Docker validation commands. Verify the files, ports, endpoints, and service configuration before running them:
+
 ```bash
 docker build -t autocompany .
 docker compose up --build -d
 docker compose ps
-curl http://localhost:8080/api/v1/employees      # 스모크 테스트
-docker compose logs --tail=100                   # 실패 시 로그 확인
-docker compose down -v                           # 정리 (볼륨 포함)
+curl --fail --show-error http://localhost:8080/api/v1/employees
+docker compose logs --tail=100
 ```
 
-### 사용자 직접 테스트 (호스트 Docker)
-```bash
-docker compose up --build -d
-curl http://localhost:8080/api/v1/employees
-docker compose down -v
-```
-사용자 테스트 절차는 `README.md`와 동일하게 유지한다.
+- Use these commands only after checking that they match the repository's actual configuration. If they do not match, determine the appropriate commands from the current configuration.
+- Full test execution and Docker image validation are separate checks. Report only the checks you actually performed.
+- On failure, inspect the logs and distinguish code defects from environment problems. After fixing the cause, rerun the relevant validation.
+- If a check cannot be run, state why. Never treat a check that was not run as passing.
 
-### QEMU VM
-```bash
-zsh qemu-test/run.sh                                   # VM 시작 (백그라운드)
-ssh -o StrictHostKeyChecking=no -p 2222 ubuntu@localhost
-qemu-img snapshot -l qemu-test/arm64.qcow2             # 스냅샷 목록 (VM 종료 상태에서)
-```
-- 스냅샷 `init` = 테스트 기준 상태, `create` = 테스트 전 백업.
-- 테스트 전 `create`로 백업 → 테스트 → 실패하거나 오염되면 `init`으로 복원 후 재현.
-- 디스크 이미지를 복사하거나 스냅샷을 만들 때는 VM을 먼저 종료한다.
+## Docker, VM, and Data Safety
 
-## 작업 규칙 (전체 의무)
+- When creating a `Dockerfile` or changing the build approach, use a multi-stage build with Maven in the build stage and a JRE-based runtime stage.
+- Inject configuration and secrets through environment variables or an approved secrets-management mechanism. Do not bake secrets into the image.
+- Prefer `docker compose down` for routine Compose shutdown.
+- `docker compose down -v` can delete volumes and their data. Run it only when test-data reset is clearly required, after verifying the target and potential data loss.
+- Shut down the VM before copying a QEMU disk image or creating a snapshot. Restoring a snapshot can roll back disk state, so verify the target and identify changes that must be preserved first.
+- Do not commit large binary files such as QEMU disk images. Verify the relevant `.gitignore` rules.
+- Inspect the actual QEMU scripts and SSH configuration before running them. Do not disable security checks, such as SSH host-key verification, indiscriminately for convenience.
 
-모든 항목은 반드시 준수해야 한다. 위반 시 테스트/커밋/병합이 무효화된다.
+## Completion Report
 
-1. **설계 변경 (의무)** → `docs/DESIGN.md`를 먼저 수정한 뒤 구현한다.
-2. **구현 (의무)** → 코드 변경 시 관련 테스트를 추가/수정한다.
-3. **검증 순서 (의무)** → **항상 QEMU VM 안에서** `mvn clean compile test -B` 수행. 이미지 검증(`docker build`/`compose up`/`curl`)도 **반드시 VM 안에서** 수행한다. 호스트에서 직접 빌드/테스트를 수행하지 않는다.
-4. **문서 (의무)** → `README.md`는 현재 구현된 기능만 기술한다 (미구현 기능 금지). 기능 추가/수정 시 함께 고친다. 실행 방법이 바뀌면 README의 `docker compose` 안내도 갱신한다.
-5. **커밋 (의무)** → **작업은 항상 `git worktree`로 수행**하며, `.worktree/` 하위에 작업별 별도의 브랜치를 만든다 (`.gitignore`에 `.worktree/` 포함). 테스트 통과 후에만 `git commit`을 수행하고, **테스트 통과하지 않은 상태로 `main`에 merge하지 않는다**. 테스트 실패 시 수정 후 재검증한다.
-6. **Dockerfile (의무)** → 멀티 스테이지 빌드(빌드 단계는 Maven, 실행 단계는 JRE)를 사용하고, 설정과 비밀 값은 환경 변수로 주입한다.
-7. **AGENTS.md 수정 금지 (의무)** → `AGENTS.md`는 직접 수정하지 않는다. 의무사항 변경이 필요하면 별도 문서/절차를 통해 제안하고, `AGENTS.md`는 이 파일의 현재 버전을 기준으로 유지한다.
+After the work, provide a concise report that distinguishes:
 
-## 에이전트와 사람의 구분
+- **Changes:** Key files changed and changes that affect users
+- **Validation results:** Commands actually run and whether they passed or failed
+- **Unverified items:** Tests not run and the reasons they could not be run
+- **Remaining risks:** Environment dependencies, data impact, and required follow-up actions
 
-- 에이전트는 VM에서의 단위/통합 테스트와 이미지 검증까지 수행하고, 자동으로 확인한 범위만 보고한다.
-- 호스트에서의 사용자 직접 테스트는 사람이 한다. 대신 완료했다고 보고하지 않는다.
-
-## 하지 말 것
-
-- `qemu-test/arm64.qcow2` 같은 대용량 바이너리를 커밋하지 않는다 (`.gitignore` 확인).
-- 호스트에 Java/Maven/PostgreSQL을 설치하지 않는다.
-- `docs/DESIGN.md`와 코드가 어긋난 채로 두지 않는다.
-- 비밀 키/자격 증명을 코드, 문서, 이미지, 커밋에 넣지 않는다.
-
-## TODO (확인 후 채울 것)
-
-- `Dockerfile`, `docker-compose.yml` 존재 여부 확인 후 없으면 작성 (앱 + PostgreSQL, 포트 8080).
-- VM 기본 이미지에 Docker 설치 후 `init` 스냅샷 재생성 (현재 기반 환경은 Java 21 + Maven만 있음).
-- 호스트 Mac의 Docker 런타임(Docker Desktop, OrbStack, Colima 등) 선택.
-- VM 내 프로젝트 경로 확정 (기존 문서는 `~/autocompany/backend`라고만 되어 있었음).
-- 각 POST API의 요청 바디 예시 추가.
-- 서비스 이름 확정 후 `docker compose logs <service>` 형태로 명령 구체화.
+Do not report host-Docker tests that must be performed by a human as completed by the agent. If only partial validation was performed, state its scope explicitly.
