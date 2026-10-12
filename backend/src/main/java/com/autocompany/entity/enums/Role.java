@@ -1,0 +1,3 @@
+package com.autocompany.entity.enums;
+
+public enum Role { PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER }
