@@ -3,7 +3,7 @@ import com.autocompany.entity.enums.Rank;
 
 import com.autocompany.entity.Employee;
 import com.autocompany.entity.PeerRating;
-import com.autocompany.entity.Rank;
+import com.autocompany.entity.enums.Rank;
 import com.autocompany.repository.EmployeeRepository;
 import com.autocompany.repository.PeerRatingRepository;
 import lombok.RequiredArgsConstructor;

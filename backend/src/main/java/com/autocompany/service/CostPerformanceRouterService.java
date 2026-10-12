@@ -1,7 +1,7 @@
 package com.autocompany.service;
 
 import com.autocompany.entity.Task;
-import com.autocompany.entity.TaskType;
+import com.autocompany.entity.enums.TaskType;
 import com.autocompany.entity.Employee;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

@@ -130,6 +130,7 @@ sandbox-data/
 *.pt
 *.pth
 *.bin
+.worktree/
 
 # ============================================================
 # Git worktrees / temporary agent output
