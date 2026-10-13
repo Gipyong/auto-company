@@ -10,7 +10,9 @@ import java.util.*;
 @RequiredArgsConstructor
 public class EmployeeService {
     private final EmployeeRepository employeeRepository;
-    public Employee createEmployee(User user, String name, String role) {
+    private final UserService userService;
+    public Employee createEmployee(UUID userId, String name, String role) {
+        User user = userService.getOrCreateLocalUser(userId);
         Employee e = new Employee();
         e.setId(UUID.randomUUID());
         e.setUser(user);

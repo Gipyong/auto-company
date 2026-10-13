@@ -22,8 +22,7 @@ public class EmployeeController {
     // 직원 채용
     @PostMapping("/employees")
     public ResponseEntity<Employee> hireEmployee(@RequestBody HireRequest request) {
-        User user = User.builder().id(request.userId).build();
-        Employee employee = employeeService.createEmployee(user, request.name, request.role);
+        Employee employee = employeeService.createEmployee(request.userId, request.name, request.role);
         return ResponseEntity.status(201).body(employee);
     }
 
@@ -51,8 +50,7 @@ public class EmployeeController {
     // 프로젝트 생성
     @PostMapping("/projects")
     public ResponseEntity<Project> createProject(@RequestBody ProjectRequest request) {
-        User user = User.builder().id(request.userId).build();
-        Project project = projectService.createProject(user, request.name, request.description);
+        Project project = projectService.createProject(request.userId, request.name, request.description);
         return ResponseEntity.status(201).body(project);
     }
 

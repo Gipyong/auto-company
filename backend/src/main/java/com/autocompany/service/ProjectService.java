@@ -15,9 +15,11 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final EmployeeRepository employeeRepository;
+    private final UserService userService;
 
     @Transactional
-    public Project createProject(User user, String name, String description) {
+    public Project createProject(UUID userId, String name, String description) {
+        User user = userService.getOrCreateLocalUser(userId);
         Project project = Project.builder()
                 .user(user)
                 .name(name)

@@ -30,6 +30,7 @@ public class TaskServiceIntegrationTest {
     @BeforeEach
     public void setUp() {
         user = userRepository.save(User.builder()
+                .id(UUID.randomUUID())
                 .email("ceo@autocompany.com")
                 .name("CEO")
                 .build());

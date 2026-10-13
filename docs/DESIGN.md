@@ -267,6 +267,8 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 초기 로컬 설치는 최초 사용자 생성 마법사를 제공한다. 기본 비밀번호를 소스 코드나 문서에 넣지 않는다.
 
+> 구현 노트 (로컬 단일 사용자 MVP): 백엔드 MVP는 로컬 단일 사용자 배포를 전제로 하되, **확장성을 위해 `User` 식별자는 호출자가 지정한 `userId`를 사용한다**. `UserService.getOrCreateLocalUser(userId)`는 동일 `userId` 재호출 시 기존 사용자를 반환하고, 다른 `userId`면 별도 사용자를 생성한다. 단일 사용자 모드는 설정/프론트엔드에서 고정 `userId`를 사용하도록 강제해 달성한다. 별도의 다중 사용자/계정 관리 API는 MVP 범위가 아니다.
+
 ### 5.3 Team
 
 - `id`, `organization_id`
