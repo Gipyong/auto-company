@@ -15,7 +15,7 @@ public class EmployeeService {
         e.setId(UUID.randomUUID());
         e.setUser(user);
         e.setName(name);
-        e.setRole(role);
+        e.setRole(Role.valueOf(role.toUpperCase()));
         return employeeRepository.save(e);
     }
     public Optional<Employee> getEmployee(UUID id) { return employeeRepository.findById(id); }

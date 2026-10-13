@@ -22,10 +22,13 @@ public class User {
     
     private String companyName;
     
+    @Builder.Default
     private boolean isPremium = false;
     
+    @Builder.Default
     private String defaultModel = "llama3:8b";
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
 

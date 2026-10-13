@@ -40,14 +40,14 @@ public class ProjectService {
     @Transactional
     public void addEmployeeToProject(UUID projectId, UUID employeeId) {
         Project project = projectRepository.findById(projectId).orElseThrow();
-        project.getAssignedEmployeeIds().add(employeeId);
+        project.getEmployees().add(employeeId);
         projectRepository.save(project);
     }
 
     @Transactional
     public void removeEmployeeFromProject(UUID projectId, UUID employeeId) {
         Project project = projectRepository.findById(projectId).orElseThrow();
-        project.getAssignedEmployeeIds().remove(employeeId);
+        project.getEmployees().remove(employeeId);
         projectRepository.save(project);
     }
 }

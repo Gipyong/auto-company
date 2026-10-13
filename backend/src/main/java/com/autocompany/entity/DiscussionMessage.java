@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
 import java.util.*;
+import com.autocompany.entity.enums.*;
 
 
 
@@ -25,9 +26,11 @@ public class DiscussionMessage {
     
     private String content;
     
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     private MessageType messageType = MessageType.DISCUSSION;
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
 

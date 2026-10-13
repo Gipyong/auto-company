@@ -135,7 +135,7 @@ public class CostPerformanceRouterService {
         
         // 2단계: 비용 효율성 최적화 (가장 저렴하면서 품질 만족하는 모델)
         return eligibleModels.stream()
-                .max(Comparator.comparingFloat(modelKey -> 
+                .max(Comparator.comparing((String modelKey) ->
                     calculateScore(modelRegistry.get(modelKey), classification)
                 ))
                 .orElse(null);
@@ -192,9 +192,9 @@ public class CostPerformanceRouterService {
             return new ExperienceHistory(0.5f, 0.5f, 0.0f, 0);
         }
         
-        float successRate = (float) relevant.stream().filter(ExperimentRecord::success).count() / relevant.size();
-        float verificationRate = (float) relevant.stream().filter(ExperimentRecord::verificationPassed).count() / relevant.size();
-        float avgCost = relevant.stream().mapToDouble(e -> e.cost).average().orElse(0.0f);
+        float successRate = (float) relevant.stream().filter(e -> e.success).count() / relevant.size();
+        float verificationRate = (float) relevant.stream().filter(e -> e.verificationPassed).count() / relevant.size();
+        float avgCost = (float) relevant.stream().mapToDouble(e -> e.cost).average().orElse(0.0);
         
         return new ExperienceHistory(successRate, verificationRate, avgCost, relevant.size());
     }

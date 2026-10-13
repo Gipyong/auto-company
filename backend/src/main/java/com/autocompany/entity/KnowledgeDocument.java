@@ -31,6 +31,8 @@ public class KnowledgeDocument {
     @Column(name = "embedding_blob", columnDefinition = "LONGTEXT")
     private String embedding; // pgvector용
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

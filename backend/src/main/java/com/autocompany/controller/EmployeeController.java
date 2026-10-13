@@ -1,6 +1,7 @@
 package com.autocompany.controller;
 
 import com.autocompany.entity.*;
+import com.autocompany.entity.enums.TaskType;
 import com.autocompany.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
