@@ -1,6 +1,6 @@
 # 🤖 AutoCompany (AI 가상 회사 시스템)
 
-**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.1.0)
+**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.2)
 
 ## 구현 상태
 

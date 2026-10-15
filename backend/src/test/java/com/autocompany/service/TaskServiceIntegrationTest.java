@@ -22,10 +22,12 @@ public class TaskServiceIntegrationTest {
     @Autowired private EmployeeRepository employeeRepository;
     @Autowired private ProjectRepository projectRepository;
     @Autowired private PeerRatingRepository ratingRepository;
+    @Autowired private JobGradeRepository jobGradeRepository;
 
     private User user;
     private Employee assignee;
     private Project project;
+    private JobGrade grade;
 
     @BeforeEach
     public void setUp() {
@@ -35,12 +37,21 @@ public class TaskServiceIntegrationTest {
                 .name("CEO")
                 .build());
 
+        grade = new JobGrade();
+        grade.setOrganizationId(UUID.randomUUID());
+        grade.setCode("L2");
+        grade.setName("Mid");
+        grade.setOrdinal(2);
+        grade.setModelSelectionMode(JobGrade.ModelSelectionMode.PRIORITY);
+        grade.setStatus(JobGrade.Status.ACTIVE);
+        grade = jobGradeRepository.save(grade);
+
         assignee = employeeRepository.save(Employee.builder()
                 .user(user)
                 .name("김개발")
                 .role(Role.DEVELOPER)
-                .rank(Rank.JUNIOR)
-                .level(3)
+                .gradeId(grade.getId())
+                .status(Status.IDLE)
                 .build());
 
         project = projectRepository.save(Project.builder()
@@ -51,15 +62,15 @@ public class TaskServiceIntegrationTest {
     }
 
     @Test
-    public void testAssignTaskPersistsWithTitleAndPrompt() {
+    public void testAssignTaskPersistsWithTitleAndDescription() {
         Task task = taskService.assignTask(project.getId(), assignee.getId(),
-                TaskType.CODING, "로그인 버그 수정", "Fix null pointer exception");
+                TaskType.TASK, "로그인 버그 수정", "Fix null pointer exception");
 
         assertNotNull(task.getId());
         Task found = taskService.getTask(task.getId()).orElseThrow();
         assertEquals("로그인 버그 수정", found.getTitle());
-        assertEquals("Fix null pointer exception", found.getPrompt());
-        assertEquals(TaskStatus.PENDING.name(), found.getStatus());
+        assertEquals("Fix null pointer exception", found.getDescription());
+        assertEquals(TaskStatus.DRAFT, found.getStatus());
         assertEquals(assignee.getId(), found.getAssignee().getId());
         assertEquals(project.getId(), found.getProject().getId());
     }
@@ -67,7 +78,7 @@ public class TaskServiceIntegrationTest {
     @Test
     public void testSubmitRatingPersistsRaterAndRatedIds() {
         Task task = taskService.assignTask(project.getId(), assignee.getId(),
-                TaskType.CODING, "t", "p");
+                TaskType.TASK, "t", "p");
 
         PeerRating rating = taskService.submitRating(task, user.getId(), assignee.getId(),
                 "CODE_QUALITY", 4.5f, "좋은 코드입니다");
@@ -80,15 +91,15 @@ public class TaskServiceIntegrationTest {
     @Test
     public void testUpdateTaskStatus() {
         Task task = taskService.assignTask(project.getId(), assignee.getId(),
-                TaskType.CODING, "t", "p");
+                TaskType.TASK, "t", "p");
 
         Task updated = taskService.updateTaskStatus(task.getId(), TaskStatus.IN_PROGRESS);
-        assertEquals(TaskStatus.IN_PROGRESS.name(), updated.getStatus());
+        assertEquals(TaskStatus.IN_PROGRESS, updated.getStatus());
     }
 
     @Test
     public void testGetTasksByAssigneeAndProject() {
-        taskService.assignTask(project.getId(), assignee.getId(), TaskType.CODING, "t", "p");
+        taskService.assignTask(project.getId(), assignee.getId(), TaskType.TASK, "t", "p");
 
         assertEquals(1, taskService.getTasksByAssignee(assignee.getId()).size());
         assertEquals(1, taskService.getTasksByProject(project.getId()).size());

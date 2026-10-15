@@ -15,10 +15,13 @@ import java.util.UUID;
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final JobGradeService jobGradeService;
     private final ProjectService projectService;
     private final TaskService taskService;
     private final CostPerformanceRouterService routerService;
 
+    // ==================== Employee ====================
+    
     // 직원 채용
     @PostMapping("/employees")
     public ResponseEntity<Employee> hireEmployee(@RequestBody HireRequest request) {
@@ -40,21 +43,77 @@ public class EmployeeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 직원 모델 변경
-    @PatchMapping("/employees/{id}/model")
-    public ResponseEntity<Void> updateModel(@PathVariable UUID id, @RequestBody ModelUpdate request) {
-        employeeService.updateEmployeeModel(id, request.aiModel);
+    // 직원 직급 배정/변경
+    @PatchMapping("/employees/{id}/grade")
+    public ResponseEntity<Void> assignGrade(@PathVariable UUID id, @RequestBody GradeAssignRequest request) {
+        if (request.gradeId == null) {
+            employeeService.removeGrade(id);
+        } else {
+            employeeService.assignGrade(id, request.gradeId);
+        }
         return ResponseEntity.ok().build();
     }
 
-    // 프로젝트 생성
+    // ==================== JobGrade (직급) ====================
+
+    // 직급 목록
+    @GetMapping("/grades")
+    public ResponseEntity<List<JobGrade>> getGrades(@RequestParam UUID organizationId) {
+        return ResponseEntity.ok(jobGradeService.getGradesByOrganization(organizationId));
+    }
+
+    // 직급 생성
+    @PostMapping("/grades")
+    public ResponseEntity<JobGrade> createGrade(@RequestBody JobGrade grade) {
+        JobGrade created = jobGradeService.createGrade(grade);
+        return ResponseEntity.status(201).body(created);
+    }
+
+    // 직급 상세
+    @GetMapping("/grades/{id}")
+    public ResponseEntity<JobGrade> getGrade(@PathVariable UUID id) {
+        return jobGradeService.getGrade(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 직급 수정
+    @PatchMapping("/grades/{id}")
+    public ResponseEntity<JobGrade> updateGrade(@PathVariable UUID id, @RequestBody JobGrade updated) {
+        JobGrade grade = jobGradeService.updateGrade(id, updated);
+        return ResponseEntity.ok(grade);
+    }
+
+    // 직급 삭제
+    @DeleteMapping("/grades/{id}")
+    public ResponseEntity<Void> deleteGrade(@PathVariable UUID id) {
+        jobGradeService.deleteGrade(id);
+        return ResponseEntity.ok().build();
+    }
+
+    // 직급별 가용 모델 풀 조회
+    @GetMapping("/grades/{id}/models")
+    public ResponseEntity<List<GradeModel>> getGradeModels(@PathVariable UUID id) {
+        return ResponseEntity.ok(jobGradeService.getGradeModels(id));
+    }
+
+    // 직급별 가용 모델 풀 설정
+    @PutMapping("/grades/{id}/models")
+    public ResponseEntity<Void> setGradeModels(@PathVariable UUID id, @RequestBody List<GradeModel> models) {
+        jobGradeService.setGradeModels(id, models);
+        return ResponseEntity.ok().build();
+    }
+
+    // ==================== Project ====================
+    
     @PostMapping("/projects")
     public ResponseEntity<Project> createProject(@RequestBody ProjectRequest request) {
         Project project = projectService.createProject(request.userId, request.name, request.description);
         return ResponseEntity.status(201).body(project);
     }
 
-    // 업무 지시
+    // ==================== Task ====================
+    
     @PostMapping("/tasks")
     public ResponseEntity<Task> assignTask(@RequestBody TaskRequest request) {
         Task task = taskService.assignTask(request.projectId, request.assigneeId, 
@@ -62,7 +121,6 @@ public class EmployeeController {
         return ResponseEntity.status(202).body(task);
     }
 
-    // 업무 상태
     @GetMapping("/tasks/{id}")
     public ResponseEntity<Task> getTask(@PathVariable UUID id) {
         return taskService.getTask(id)
@@ -70,7 +128,8 @@ public class EmployeeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 동료 평가
+    // ==================== Rating ====================
+    
     @PostMapping("/ratings")
     public ResponseEntity<PeerRating> submitRating(@RequestBody RatingRequest request) {
         Task task = taskService.getTask(request.taskId).orElseThrow();
@@ -79,7 +138,8 @@ public class EmployeeController {
         return ResponseEntity.status(201).body(rating);
     }
 
-    // 토론 메시지 전송
+    // ==================== Message ====================
+    
     @PostMapping("/messages")
     public ResponseEntity<DiscussionMessage> sendMessage(@RequestBody MessageRequest request) {
         Project project = projectService.getProject(request.projectId).orElseThrow();
@@ -89,10 +149,10 @@ public class EmployeeController {
         return ResponseEntity.status(201).body(message);
     }
 
-    // CEO Ask Anything (RAG)
+    // ==================== CEO Ask ====================
+    
     @PostMapping("/ask")
     public ResponseEntity<AskResponse> askQuestion(@RequestBody AskRequest request) {
-        // RAG 시스템 연동 (나중에 구현)
         return ResponseEntity.ok(new AskResponse(
                 "질문: " + request.question,
                 "답변: RAG 시스템이 이 질문에 대해 검색 후 답변합니다.",
@@ -107,8 +167,8 @@ public class EmployeeController {
         public String role;
     }
 
-    public static class ModelUpdate {
-        public String aiModel;
+    public static class GradeAssignRequest {
+        public UUID gradeId;
     }
 
     public static class ProjectRequest {

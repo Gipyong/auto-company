@@ -24,7 +24,7 @@ public class TaskService {
 
     @Transactional
     public Task assignTask(UUID projectId, UUID assigneeId, TaskType taskType,
-                           String title, String prompt) {
+                           String title, String description) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
         Employee assignee = employeeRepository.findById(assigneeId)
@@ -35,8 +35,8 @@ public class TaskService {
                 .assignee(assignee)
                 .type(taskType)
                 .title(title)
-                .prompt(prompt)
-                .status(TaskStatus.PENDING.name())
+                .description(description)
+                .status(TaskStatus.DRAFT)
                 .build();
         return taskRepository.save(task);
     }
@@ -87,7 +87,7 @@ public class TaskService {
     public Task updateTaskStatus(UUID taskId, TaskStatus newStatus) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        task.setStatus(newStatus.name());
+        task.setStatus(newStatus);
         return taskRepository.save(task);
     }
 }
