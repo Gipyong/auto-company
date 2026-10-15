@@ -24,17 +24,9 @@ public class Employee {
     @Column(nullable = false)
     private Role role;
     
-    @Builder.Default
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Rank rank = Rank.INTERN;
+    @Column(name = "grade_id")
+    private UUID gradeId;
     
-    @Builder.Default
-    @Column(nullable = false)
-    private int level = 1;
-    
-    @Builder.Default
-    private String aiModel = "llama3:8b";
     private String dockerContainerId;
     
     @Builder.Default
@@ -44,11 +36,15 @@ public class Employee {
     
     @Builder.Default
     private int totalTasks = 0;
+    
     @Builder.Default
     private int completedTasks = 0;
+    
     @Builder.Default
     private float avgRating = 0.0f;
+    
     private String systemPrompt;
+    
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
     
@@ -67,6 +63,4 @@ public class Employee {
     public float getAvgRating() { return avgRating; }
     public int getCompletedTasks() { return completedTasks; }
     public int getTotalTasks() { return totalTasks; }
-    public int getLevel() { return level; }
-    public com.autocompany.entity.enums.Rank getRank() { return rank; }
 }

@@ -1,6 +1,8 @@
 package com.autocompany.integration;
 
 import com.autocompany.controller.EmployeeController;
+import com.autocompany.entity.JobGrade;
+import com.autocompany.entity.GradeModel;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -10,8 +12,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.autocompany.service.*;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,6 +31,9 @@ public class EmployeeIntegrationTest {
     private EmployeeService employeeService;
     
     @MockBean
+    private JobGradeService jobGradeService;
+    
+    @MockBean
     private ProjectService projectService;
     
     @MockBean
@@ -35,7 +44,6 @@ public class EmployeeIntegrationTest {
 
     @Test
     public void testGetEmployeesEndpoint() throws Exception {
-        // API 명세서 Section 3.1: 직원 조회 엔드포인트 테스트
         mockMvc.perform(get("/api/v1/employees").param("userId", "550e8400-e29b-41d4-a716-446655440000")
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
@@ -43,7 +51,6 @@ public class EmployeeIntegrationTest {
 
     @Test
     public void testAskEndpoint() throws Exception {
-        // API 명세서 Section 3.4: CEO Ask Anything 엔드포인트 테스트 (POST /api/v1/ask)
         mockMvc.perform(post("/api/v1/ask")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"question\":\"현재 아키텍처는?\"}"))
@@ -52,7 +59,96 @@ public class EmployeeIntegrationTest {
 
     @Test
     public void testEmployeeHireEndpointExists() throws Exception {
-        // 직원 채용 엔드포인트 존재 확인 (POST /api/v1/employees)
         assertNotNull(EmployeeController.class);
+    }
+
+    @Test
+    public void testAssignGradeEndpoint() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID gradeId = UUID.randomUUID();
+        
+        mockMvc.perform(patch("/api/v1/employees/{id}/grade", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"gradeId\":\"" + gradeId + "\"}"))
+                .andExpect(status().isOk());
+        
+        verify(employeeService).assignGrade(employeeId, gradeId);
+    }
+
+    @Test
+    public void testRemoveGradeEndpoint() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        
+        mockMvc.perform(patch("/api/v1/employees/{id}/grade", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isOk());
+        
+        verify(employeeService).removeGrade(employeeId);
+    }
+
+    @Test
+    public void testGetGradesEndpoint() throws Exception {
+        UUID organizationId = UUID.randomUUID();
+        JobGrade grade = new JobGrade();
+        grade.setId(UUID.randomUUID());
+        grade.setCode("L1");
+        grade.setName("Junior");
+        grade.setOrdinal(1);
+        
+        when(jobGradeService.getGradesByOrganization(organizationId)).thenReturn(List.of(grade));
+        
+        mockMvc.perform(get("/api/v1/grades").param("organizationId", organizationId.toString())
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+        
+        verify(jobGradeService).getGradesByOrganization(organizationId);
+    }
+
+    @Test
+    public void testCreateGradeEndpoint() throws Exception {
+        JobGrade grade = new JobGrade();
+        grade.setId(UUID.randomUUID());
+        grade.setCode("L1");
+        grade.setName("Junior");
+        grade.setOrdinal(1);
+        
+        when(jobGradeService.createGrade(any(JobGrade.class))).thenReturn(grade);
+        
+        mockMvc.perform(post("/api/v1/grades")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"organizationId\":\"550e8400-e29b-41d4-a716-446655440000\",\"code\":\"L1\",\"name\":\"Junior\",\"ordinal\":1}"))
+                .andExpect(status().isCreated());
+        
+        verify(jobGradeService).createGrade(any(JobGrade.class));
+    }
+
+    @Test
+    public void testGetGradeModelsEndpoint() throws Exception {
+        UUID gradeId = UUID.randomUUID();
+        GradeModel gm = new GradeModel();
+        gm.setId(UUID.randomUUID());
+        gm.setGradeId(gradeId);
+        gm.setPriority(1);
+        
+        when(jobGradeService.getGradeModels(gradeId)).thenReturn(List.of(gm));
+        
+        mockMvc.perform(get("/api/v1/grades/{id}/models", gradeId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+        
+        verify(jobGradeService).getGradeModels(gradeId);
+    }
+
+    @Test
+    public void testSetGradeModelsEndpoint() throws Exception {
+        UUID gradeId = UUID.randomUUID();
+        
+        mockMvc.perform(put("/api/v1/grades/{id}/models", gradeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"gradeId\":\"" + gradeId + "\",\"modelProfileId\":\"550e8400-e29b-41d4-a716-446655440000\",\"priority\":1}]"))
+                .andExpect(status().isOk());
+        
+        verify(jobGradeService).setGradeModels(any(), any());
     }
 }

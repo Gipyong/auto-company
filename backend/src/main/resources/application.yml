@@ -27,6 +27,8 @@ ai:
     default:
       local-model: llama3:8b
       fallback-model: gpt-4o-mini
+    grade:
+      selection-mode: priority  # priority | task_based | budget_optimized
 
 logging:
   level:

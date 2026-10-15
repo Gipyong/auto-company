@@ -1,8 +1,9 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.1  
+> 버전: 1.2  
 > 상태: 구현 기준 설계 초안 — Java/Spring Boot 백엔드 기준  
-> 목표: 로컬 우선(Local-first)으로 실행 가능하며, 다른 PC·서버로 재현 가능하게 배포할 수 있는 AI 기반 소프트웨어 개발 조직 플랫폼
+> 목표: 로컬 우선(Local-first)으로 실행 가능하며, 다른 PC·서버로 재현 가능하게 배포할 수 있는 AI 기반 소프트웨어 개발 조직 플랫폼  
+> 변경 요약(v1.2): 직원은 단일 모델이 아니라 사용자 정의 **직급(JobGrade)**을 갖는다. 직급별로 가용 모델 풀을 사용자가 설정하며, 자동 승진/강등을 제거하고 직급 부여·변경은 수동으로 수행한다. 자세한 내용은 §5.6, §5.9, §6.2, §15를 참고한다.
 
 ---
 
@@ -14,7 +15,7 @@
 
 1. **Local-first, portable-by-default**: 기본 실행은 로컬 PC 또는 자체 서버다. 설치 환경 차이는 컨테이너와 명시적 설정으로 흡수한다.
 2. **Workflow state is durable**: AI 대화 기록만으로 작업을 관리하지 않는다. 모든 업무 상태, 승인, 실행, 비용, 결과를 영속화한다.
-3. **Models are replaceable providers**: 직원의 정체성과 모델 제공자를 분리한다. 모델을 교체해도 직원과 업무 이력은 유지된다.
+3. **Models are replaceable providers**: 직원의 정체성과 모델 제공자를 분리한다. 직원은 개별 모델이 아니라 직급(JobGrade)을 가지며, 가용 모델 풀은 직급에 연결된다. 모델을 교체해도 직원·직급·업무 이력은 유지된다.
 4. **Evidence over consensus**: AI 다수의 동의보다 테스트, 정적 분석, 재현 절차, 검증 가능한 근거를 우선한다.
 5. **Separation of duties**: 작성자 본인은 자신의 PR을 승인할 수 없다. 위험도에 따라 독립 검증을 요구한다.
 6. **Bounded autonomy**: 직원은 설정된 권한, 예산, 재시도, 실행 시간, 네트워크 범위 내에서만 자율적으로 움직인다.
@@ -25,11 +26,13 @@
 
 ### 설계상 중요한 구분
 
-- `Employee`: 지속되는 가상 직원 정체성, 직무, 직급, 권한, 평가 및 이력.
+- `Employee`: 지속되는 가상 직원 정체성, 직무, 직급 참조, 권한, 평가 및 이력.
+- `JobGrade`: 사용자가 구성하는 직급. 순서, 책임 범위, 담당 업무 유형, 가용 모델 풀을 가진다.
 - `AgentRun`: 특정 작업을 수행하기 위한 일회성/재개 가능한 실행.
 - `Task`: 사람이 이해할 수 있는 업무와 완료 조건.
 - `WorkflowRun`: 여러 Task와 승인 단계를 묶는 장기 실행 프로세스.
 - `ModelProfile`: 모델 제공자·모델 ID·가격·능력·한도 설정.
+- `GradeModel`: 특정 직급에 배정된 가용 모델과 그 사용 우선순위.
 - `Workspace`: Git 작업 트리와 격리된 개발 실행환경.
 - `Artifact`: 코드, 문서, 테스트 결과, 빌드 결과, 보고서 등 검증 가능한 산출물.
 
@@ -43,7 +46,7 @@
 
 - 로컬 웹 콘솔
 - 회사·조직·직원 관리
-- 직무/직급/기본 모델/도구 권한 설정
+- 직무/직급 관리와 직급별 가용 모델/도구 권한 설정
 - 프로젝트 및 Git 저장소 연결
 - 요구사항을 Epic/Story/Task로 분해하는 작업 흐름
 - 직원별 모델 호출 및 도구 실행
@@ -58,7 +61,7 @@
 
 ### 1.2 MVP 이후
 
-- 직무별 동료 평가와 승진 제안
+- 직무별 동료 평가와 성과 관측
 - 정교한 회의/토론 프로토콜
 - 다중 프로젝트 리소스 스케줄링
 - 선택적 VM 실행기
@@ -74,9 +77,10 @@
 - 기본 설정에서 프로덕션 자동 배포
 - Docker 컨테이너를 완전한 보안 경계로 간주
 - 특정 상용 모델이나 특정 벤더 SDK에 도메인 로직을 종속
-- “직급이 높으면 무조건 더 좋은 모델”이라는 고정 규칙
+- “직급이 높으면 무조건 더 좋은 모델”이라는 고정 규칙 (배정 여부는 사용자가 판단하며 시스템이 강제하지 않는다)
 - 직원 수가 많을수록 품질이 좋아진다고 가정
-- 자동 평가 점수만으로 즉시 직급을 강등/승진
+- 평가 점수만으로 직급을 자동으로 강등/승진하는 것
+- 직급-모델 배정을 시스템이 자동으로 재구성하는 것
 - 모든 작업에서 장시간 다자 토론 실행
 
 ---
@@ -173,7 +177,7 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 ### 3.1 논리 모듈
 
-1. **Organization Service**: 직원, 직무, 직급, 팀, 권한
+1. **Organization Service**: 직원, 직무, 직급(JobGrade), 직급별 가용 모델, 팀, 권한
 2. **Project Service**: 프로젝트 설정, 저장소, 목표, 환경
 3. **Task Service**: 백로그, 할당, 의존성, 완료 조건
 4. **Workflow Engine**: 상태 전이, 재시도, 재개, 타임아웃
@@ -184,7 +188,7 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 9. **Git Integration**: 브랜치, diff, 커밋, PR/리뷰 동기화
 10. **Quality Gate**: 테스트, 린트, 타입 검사, 보안 검사, 승인 정책
 11. **Knowledge & Docs**: 문서, 검색, 인덱싱, 최신성 확인
-12. **Evaluation Service**: 평가 데이터, 근거, 평가자, 승진 제안
+12. **Evaluation Service**: 평가 데이터, 근거, 평가자 (평가는 성과 관측용이며 직급을 자동 변경하지 않는다)
 13. **Budget & Usage**: 모델 호출량, 금액, 실행 자원, 프로젝트 예산
 14. **Audit & Observability**: 중요한 변경, 추적 ID, 오류, 메트릭
 
@@ -267,8 +271,6 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 초기 로컬 설치는 최초 사용자 생성 마법사를 제공한다. 기본 비밀번호를 소스 코드나 문서에 넣지 않는다.
 
-> 구현 노트 (로컬 단일 사용자 MVP): 백엔드 MVP는 로컬 단일 사용자 배포를 전제로 하되, **확장성을 위해 `User` 식별자는 호출자가 지정한 `userId`를 사용한다**. `UserService.getOrCreateLocalUser(userId)`는 동일 `userId` 재호출 시 기존 사용자를 반환하고, 다른 `userId`면 별도 사용자를 생성한다. 단일 사용자 모드는 설정/프론트엔드에서 고정 `userId`를 사용하도록 강제해 달성한다. 별도의 다중 사용자/계정 관리 API는 MVP 범위가 아니다.
-
 ### 5.3 Team
 
 - `id`, `organization_id`
@@ -284,19 +286,17 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 - `display_name: str`
 - `job_family: developer | architect | product | designer | qa | security | devops | technical_writer | analyst | operations | custom`
 - `specialties: List<String>` — 예: `python`, `react`, `postgresql`, `security`
-- `seniority_level: int` — 1~5
-- `title: str` — UI 표시용 직급명
+- `grade_id: UUID` — 소속 직급(`JobGrade`) 참조. 직급명·순서·책임 범위·가용 모델은 직급이 소유한다
 - `employment_status: active | paused | on_leave | retired`
 - `availability_status: available | working | waiting | rate_limited | blocked`
 - `system_profile: text` — 직무/업무 원칙. 민감정보는 포함하지 않음
 - `tool_policy_id: UUID`
-- `model_policy_id: UUID`
 - `memory_policy: JSONB`
 - `manager_employee_id: UUID | null`
 - `created_by_user_id: UUID`
 - `retired_at: datetime | null`
 
-**중요**: `seniority_level`과 모델 품질 등급은 별개다. 직원 승격은 평가 서비스가 제안하고, 조직 정책에 따라 CEO 또는 권한 있는 리더가 승인한다.
+**중요**: 직원은 개별 기본 모델이나 개별 모델 정책을 갖지 않는다. 직원은 직급 하나를 가지며, 사용 가능한 모델은 그 직급의 가용 모델 풀(§5.9)로 결정된다. 직급의 품질 등급과 모델 품질 등급은 별개다. 직급 부여·변경은 자동화하지 않고 사용자(CEO/관리자)가 수동으로 수행한다(§15.3).
 
 ### 5.5 EmployeeSkill
 
@@ -309,9 +309,9 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 역량은 자기 선언과 검증된 역량을 구분한다. 초기에는 자기 선언을 사용하되 `confidence`를 낮게 두고, 산출물 기반 평가로 갱신한다.
 
-### 5.6 JobRole / SeniorityPolicy
+### 5.6 JobRole / JobGrade
 
-직무와 직급 규칙은 코드에 하드코딩하지 않고 설정 가능한 템플릿으로 관리한다.
+직무(JobRole)와 직급(JobGrade) 규칙은 코드에 하드코딩하지 않고 설정 가능한 엔티티/템플릿으로 관리한다.
 
 `JobRole`:
 - `id`, `organization_id | null` (전역 템플릿 가능)
@@ -320,13 +320,19 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 - `allowed_tool_policy_ids: JSONB`
 - `evaluation_rubric_id: UUID | null`
 
-`SeniorityPolicy`:
-- `level: 1..5`
-- `title`
-- `expected_scope`
-- `required_evidence: JSONB`
-- `minimum_review_count`
-- `promotion_mode: suggest_only | require_manager | require_ceo`
+`JobGrade` (직급):
+- `id`, `organization_id`
+- `code: str` — 조직 내 unique. 예: `L1`, `L2`, `principal`
+- `name: str` — UI 표시용 직급명
+- `ordinal: int` — 직급 순서. 값이 클수록 상위 직급. 조직 내 unique
+- `responsibilities: text` — 이 직급의 책임 범위. 높은 직급은 설계·검증·리뷰 등 복잡하고 정확성이 중요한 업무에 중점
+- `task_types: JSONB` — 이 직급이 담당할 수 있는 업무 유형(`TaskType`) 목록
+- `model_selection_mode: priority | task_based | budget_optimized` — 가용 모델 풀에서 모델을 고르는 방식. 기본 `priority`(우선순위 순)
+- `is_template_default: bool` — 기본 템플릿에서 생성된 직급인지 여부
+- `status: active | archived`
+- `created_at`, `updated_at`
+
+직급은 사용자가 직접 구성한다. 기본 템플릿은 5단계(L1~L5)를 제공하지만, 개수를 늘리거나 줄이고 이름·책임·담당 업무를 바꿀 수 있다. 직급의 순서는 `ordinal`로 관리하며, 삭제는 해당 직급에 배정된 직원이 없을 때만 허용한다(직원이 있으면 먼저 다른 직급으로 재배정해야 한다). 직급별 가용 모델은 별도 관계(§5.9 `GradeModel`)로 관리한다.
 
 ### 5.7 ModelProvider
 
@@ -363,23 +369,22 @@ API 키는 환경변수 또는 암호화된 secret store에서 읽는다. 로그
 
 가격은 관리자가 확인한 값만 입력한다. 가격이 불명확하면 비용을 0으로 가정하지 않고 `unknown`으로 표시하며, 예산 정책상 사용을 제한할 수 있다.
 
-### 5.9 EmployeeModelPolicy
+### 5.9 GradeModel (직급별 가용 모델)
 
-- `id`, `employee_id`
-- `default_model_profile_id`
-- `allowed_model_profile_ids: JSONB`
-- `fallback_model_profile_ids: JSONB`
-- `routing_mode: fixed | task_based | budget_optimized`
-- `minimum_quality_tier: int`
-- `allow_local_models: bool`
-- `allow_paid_fallback: bool`
-- `promotion_triggers: JSONB` — 위험도, 실패 횟수, 작업 복잡도
-- `max_model_escalations_per_task: int`
-- `max_cost_per_task: Decimal`
-- `max_input_tokens_per_run: int | null`
-- `max_output_tokens_per_run: int | null`
+직원별 모델 정책 대신 직급별 가용 모델 풀을 사용한다.
 
-정책 엔진은 직원 정책, 프로젝트 정책, 조직 정책의 교집합을 적용한다. 더 제한적인 정책이 항상 우선한다.
+- `id`, `grade_id`, `model_profile_id`
+- `priority: int` — 직급 내 사용 우선순위. 1이 최우선
+- `enabled: bool` — 일시적으로 풀에서 제외
+- `created_at`, `updated_at`
+- unique constraint: `(grade_id, model_profile_id)`
+
+규칙:
+- 직원은 자신의 직급에 배정된 `GradeModel` 중 하나를 사용한다. 풀 밖의 모델은 라우터가 선택하지 않는다.
+- 풀과 우선순위는 사용자가 직접 설정한다. 높은 직급에 더 성능이 좋은 모델을 배정할지, 비용이 낮은 모델을 배정할지는 사용자 판단이며 시스템이 강제하지 않는다.
+- 모델 선택 방식은 직급의 `model_selection_mode`를 따른다. 초기 구현은 `priority`(우선순위 순)를 사용하고, `task_based`(작업 특성에 따른 선택)와 `budget_optimized`는 이후 확장한다. 선택 로직의 세부 규칙은 §9.2에서 정의한다(현재는 데이터 구조와 우선순위만 확정).
+- 프로젝트·조직 정책은 이 풀 위에 추가 제한으로만 작용할 수 있다. 더 제한적인 정책이 항상 우선한다.
+- 직원별 예산·토큰 한도는 모델 선택과 별개로 `BudgetPolicy`/`UsageLedger`(§5.21)에서 관리한다.
 
 ### 5.10 Project
 
@@ -644,7 +649,7 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 
 문서 검색 결과는 근거 파일과 revision을 함께 반환한다. 모델이 근거 없이 답을 만들 경우 불확실성을 표시하고 담당자 확인 작업을 생성할 수 있어야 한다.
 
-### 5.20 Evaluation / PromotionProposal
+### 5.20 Evaluation
 
 `Evaluation`:
 - `id`, `organization_id`, `subject_employee_id`
@@ -660,17 +665,7 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 - `summary`
 - `created_at`
 
-`PromotionProposal`:
-- `id`, `employee_id`
-- `current_level`, `proposed_level`
-- `supporting_evaluation_ids: JSONB`
-- `evidence_summary`
-- `status: draft | pending_approval | approved | rejected | deferred`
-- `approved_by_user_id`
-- `decision_note`
-- `created_at`, `decided_at`
-
-평가 점수만으로 자동 승진/강등하지 않는다. 충분한 표본과 독립적 근거가 부족하면 `deferred`로 둔다. 자기 평가, 상호 담합, 모델 계열 편향을 완화하기 위해 평가자 다양성과 실제 산출물의 검증 결과를 함께 고려한다.
+평가는 성과 관측과 직급 변경 판단의 참고 자료로 사용한다. 평가 점수만으로 직급을 자동 변경하지 않으며, 승진/강등을 자동 제안하는 별도 객체를 두지 않는다. 직급 부여·변경은 사용자(CEO/관리자)가 수동으로 수행한다(§15.3). 자기 평가, 상호 담합, 모델 계열 편향을 완화하기 위해 평가자 다양성과 실제 산출물의 검증 결과를 함께 고려한다.
 
 ### 5.21 Budget / UsageLedger
 
@@ -757,9 +752,13 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 | 1 | 기술 문서 담당자 | L2 | 문서 갱신, 지식 수집, 최신성 검사 |
 | 1 | 디자이너/UX | L2 | 사용자 흐름, UI 명세, 접근성 검토 |
 
-이 조직은 MVP를 위한 기본값이다. 단순 API 프로젝트라면 디자이너의 할당량을 낮추고, UI 프로젝트라면 프론트엔드 개발자를 추가하는 식으로 프로젝트 유형에 따라 템플릿을 바꾼다.
+이 조직은 MVP를 위한 기본값이다. 단순 API 프로젝트라면 디자이너의 할당량을 낮추고, UI 프로젝트라면 프론트엔드 개발자를 추가하는 식으로 프로젝트 유형에 따라 템플릿을 바꾼다. 표의 `기본 직급`은 기본 템플릿이 생성하는 직급(§6.2)을 가리킨다.
 
-### 6.2 직급 기본 정책
+### 6.2 직급(JobGrade) 기본 정책
+
+기본 템플릿은 5단계 직급(L1~L5)을 제공한다. 이는 출발점이며, 사용자는 직급을 추가·삭제·개명하고 직급 수를 늘리거나 줄일 수 있다. 각 직급은 순서(ordinal), 책임 범위, 담당 업무 유형, 직급별 가용 모델 풀을 가진다.
+
+권장 기본값:
 
 - L1 Junior: 범위가 명확한 작업, 제한된 쓰기 권한, 승인 없는 merge/deploy 불가
 - L2 Mid: 독립적인 기능 구현, 단위 테스트, 일반 PR 리뷰 가능
@@ -767,21 +766,31 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 - L4 Lead: 작업 우선순위 및 모듈 수준 결정 제안, 여러 직원 조정
 - L5 Architect: 아키텍처 및 고위험 설계 검토. 운영 배포 권한은 직급과 별도로 부여
 
-직급이 높다는 이유만으로 모든 권한을 자동 부여하지 않는다. 권한은 직무와 위험 정책으로 결정한다.
+직급이 높을수록 설계, 검증, 리뷰처럼 복잡하고 정확성이 중요한 업무에 중점을 둔다. 이는 책임 범위로 표현하며, 담당 가능한 업무 유형(`task_types`)과 함께 설정한다.
+
+직급이 높다는 이유만으로 모든 권한을 자동 부여하지 않는다. 권한은 직무와 위험 정책으로 결정한다. 높은 직급에 더 좋은 모델을 배정할지는 사용자가 판단하며, 시스템은 특정 배정 규칙을 강제하지 않는다.
+
+직급의 변경은 다음 제약을 따른다.
+
+- `ordinal`은 조직 내 유일해야 한다.
+- 직급 삭제는 해당 직급에 배정된 직원이 없을 때만 허용한다. 직원이 있으면 먼저 다른 직급으로 재배정한다.
+- 직원의 직급 부여·변경은 자동화하지 않고 사용자가 수동으로 수행한다(§15.3).
 
 ### 6.3 기본 모델 라우팅 정책
 
 특정 벤더의 특정 모델 ID를 기본값으로 하드코딩하지 않는다. 최초 실행 시 제공자 설정과 사용 가능한 모델을 탐색/등록하고, capability와 비용 정보에 따라 프로필을 선택한다.
 
-기본 정책:
+모델 라우팅은 직원이 속한 직급의 가용 모델 풀(§5.9) 안에서 수행한다. 선택 방식은 직급의 `model_selection_mode`를 따르며, 초기 구현은 우선순위(`priority`) 순이다. 작업 특성 기반 선택(`task_based`)과 비용 최적화 선택(`budget_optimized`)은 이후 확장한다.
+
+기본 정책(풀 내 선택 기준):
 
 - 단순 구현·포맷팅·문서 초안: 저비용 모델
 - 일반 기능 구현·테스트 분석: 중간 등급 모델
 - 아키텍처·보안·중요 장애·고위험 PR: 고성능 모델
-- 모델이 제공되지 않거나 쿼터가 소진된 경우: 허용된 대체 모델 또는 대기
+- 모델이 제공되지 않거나 쿼터가 소진된 경우: 풀 내 허용된 대체 모델 또는 대기
 - 로컬 전용 모드: 로컬 모델만 허용하고 외부 API 호출을 정책 엔진에서 차단
 - 모델 가격을 알 수 없는 경우: 기본적으로 유료 사용을 막거나 명시적 승인 요구
-- 승격 횟수, 작업 비용, 토큰 수, 전체 프로젝트 예산에 hard limit 설정
+- 풀 내 모델 전환 횟수, 작업 비용, 토큰 수, 전체 프로젝트 예산에 hard limit 설정
 
 `quality_tier`는 벤치마크와 실제 결과를 기반으로 관리자가 설정하는 운영 분류이지, 모델의 절대적인 품질을 보장하지 않는다.
 
@@ -789,7 +798,7 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 
 초기 안전 기본값 예시(운영 데이터로 조정할 것):
 
-- 한 Task당 모델 승격 최대 2회
+- 한 Task당 풀 내 모델 전환(상위 모델로의 승격) 최대 2회
 - 동일 오류 자동 재시도 최대 2회
 - 한 회의 최대 3라운드
 - 한 Task의 기본 실행 제한 30분, 장기 작업은 별도 정책
@@ -896,9 +905,9 @@ BLOCKED
 ### 8.1 실행 순서
 
 1. Task와 프로젝트 정책 로드
-2. 직원 프로필 및 권한 로드
+2. 직원 프로필, 직급(JobGrade) 및 권한 로드
 3. 필요한 컨텍스트만 수집
-4. 모델 라우팅 및 예상 비용 산정
+4. 직급 가용 모델 풀 내에서 모델 라우팅 및 예상 비용 산정
 5. 예산/토큰/위험 정책 검사
 6. 모델 호출
 7. 응답 형식 검증
@@ -983,16 +992,18 @@ public interface ModelAdapter {
 
 초기에는 복잡한 ML 최적화보다 설명 가능한 규칙 기반 라우터를 사용한다.
 
-1. 조직/프로젝트/직원 정책의 허용 모델 교집합 계산
-2. 필요한 capability 필터링
-3. 최소 품질 등급 필터링
-4. 현재 provider health 및 quota 상태 확인
-5. 예상 비용과 context window 확인
-6. 작업 위험도와 승격 조건 확인
-7. 예산 내에서 예상 품질/비용 균형이 좋은 모델 선택
-8. 선택 이유를 기록
+1. 직원 직급의 가용 모델 풀(§5.9 `GradeModel`)을 기준 집합으로 삼는다. 풀 밖의 모델은 후보에 넣지 않는다.
+2. 조직/프로젝트 정책의 허용 모델과 교집합을 계산한다
+3. 필요한 capability 필터링
+4. 최소 품질 등급 필터링
+5. 현재 provider health 및 quota 상태 확인
+6. 예상 비용과 context window 확인
+7. 작업 위험도와 풀 내 승격 조건 확인
+8. 선택 방식(`model_selection_mode`)에 따라 모델 선택. 기본은 `priority`(우선순위 순)이며, `task_based`/`budget_optimized`는 이후 확장한다
+9. 예산 내에서 예상 품질/비용 균형이 좋은 모델 선택
+10. 선택 이유를 기록
 
-예상 품질을 정확히 수치화할 수 없으므로 라우터는 가짜 정밀 점수를 만들지 않는다. 초기에는 `tier`, capability, 비용, 가용성, 최근 성공률을 사용하고 선택 근거를 남긴다.
+예상 품질을 정확히 수치화할 수 없으므로 라우터는 가짜 정밀 점수를 만들지 않는다. 초기에는 `tier`, capability, 비용, 가용성, 최근 성공률을 사용하고 선택 근거를 남긴다. 선택 로직(우선순위 순, 작업별 지정 등)의 세부 규칙은 추후 구현한다. 이 절은 현재 그 데이터 구조와 확장 지점만 확정한다.
 
 ### 9.3 Fallback 규칙
 
@@ -1199,7 +1210,7 @@ docs/
 
 ---
 
-## 15. 평가와 승진 정책
+## 15. 평가와 직급 변경 정책
 
 ### 15.1 평가 루브릭
 
@@ -1236,15 +1247,20 @@ QA:
 - 실제 산출물과 테스트 근거가 없는 평가는 낮은 신뢰도로 표시
 - 자기 평가와 상호 평가를 독립 평가로 간주하지 않음
 - 평가자별 오탐/정확도 이력을 참고하되 평가자 점수를 절대적 진실로 취급하지 않음
-- 평가 표본이 적으면 승진을 보류
+- 평가 표본이 적으면 직급 변경 판단의 참고 자료로 사용하지 않음
 - 동일 모델 계열의 평가가 몰리면 독립성 경고
 - 단순 작업량보다 난이도와 위험도를 고려
 - 실패를 보고한 직원이 불이익을 받지 않도록 투명한 실패 기록을 장려
 - 점수에 대한 근거와 이의 제기 경로 제공
 
-### 15.3 승진
+### 15.3 직급 변경
 
-승진은 자동 실행이 아니라 제안으로 시작한다. 시스템은 필요한 직무별 증거, 최소 표본, 최근 기간의 성과, 리뷰 품질, 신뢰도를 집계한다. CEO/관리자는 근거를 검토해 승인·거절·보류한다. 승진 후 권한은 별도의 권한 정책에서 재계산한다.
+AI 직원에게 자동 승진/강등 제도는 두지 않는다. 직급은 사용자가 수동으로 부여·변경한다.
+
+- 시스템은 직무별 증거, 표본 수, 최근 기간의 성과, 리뷰 품질, 신뢰도를 집계해 직급 변경 판단의 참고 자료로 제공한다.
+- CEO/관리자는 근거를 참고해 직원의 직급을 부여·변경하거나 그대로 둔다. 시스템이 평가 점수만으로 직급을 자동 변경하지 않는다.
+- 직급 변경 시 해당 직급의 책임 범위, 담당 업무 유형, 가용 모델 풀이 함께 적용된다. 별도의 권한 승격 절차는 직무·위험 정책에서 결정한다.
+- 직급을 부여하는 것으로 특정 권한이 자동 확대되지 않는다. 권한은 직무와 위험 정책으로 결정한다.
 
 ---
 
@@ -1329,6 +1345,17 @@ API prefix: `/api/v1`
 - `POST /employees/{employee_id}/pause`
 - `POST /employees/{employee_id}/retire`
 - `GET /employees/{employee_id}/evaluations`
+- `PATCH /employees/{employee_id}/grade` — 직원의 직급 배정/변경(수동)
+
+### Job Grades (직급)
+
+- `GET /grades`
+- `POST /grades`
+- `GET /grades/{grade_id}`
+- `PATCH /grades/{grade_id}` — 이름, 순서, 책임 범위, 담당 업무 유형, 선택 방식 수정
+- `DELETE /grades/{grade_id}` — 해당 직급에 직원이 없을 때만 허용
+- `GET /grades/{grade_id}/models` — 직급별 가용 모델 풀과 우선순위
+- `PUT /grades/{grade_id}/models` — 직급별 가용 모델 풀과 우선순위 설정
 
 ### Models
 
@@ -1337,7 +1364,6 @@ API prefix: `/api/v1`
 - `POST /model-providers/{id}/health-check`
 - `GET /model-profiles`
 - `POST /model-profiles`
-- `PATCH /employees/{id}/model-policy`
 
 ### Projects / Tasks
 
@@ -1483,14 +1509,16 @@ Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브�
 
 구현:
 - Organization, User, Team, Employee, Project, Task CRUD
-- 기본 템플릿 import
+- JobGrade CRUD(추가·삭제·순서·책임·담당 업무 유형)와 직원 직급 배정
+- 기본 템플릿 import (기본 5단계 직급 포함)
 - 직무/직급/상태/권한 UI
 - DB 제약조건 및 입력 검증
 - AuditEvent 기록
 
 완료 조건:
 - UI에서 기본 8인 조직을 생성/수정/비활성화 가능
-- 직원 직급과 모델 정책을 분리해 저장
+- 직급을 추가·삭제·개명할 수 있고, 직원이 직급을 참조해 저장됨
+- 삭제하려는 직급에 배정된 직원이 있으면 거부됨
 - 허가되지 않은 사용자의 수정 요청이 거부됨
 
 ### Phase 2 — Model Adapter 및 비용 원장
@@ -1500,7 +1528,7 @@ Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브�
 - 최소 한 개의 hosted provider와 한 개의 OpenAI-compatible/local adapter
 - mock provider로 테스트 가능
 - health check, timeout, usage parsing
-- ModelProfile/EmployeeModelPolicy
+- ModelProfile/직급별 가용 모델 풀(GradeModel)
 - BudgetPolicy/UsageLedger
 - 가격 불명 모델의 제한 정책
 
@@ -1578,13 +1606,13 @@ Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브�
 - max rounds/cost
 - 독립 제안과 반대 근거
 - 직무별 Evaluation rubric
-- PromotionProposal 및 승인 UI
+- 평가 결과를 직급 변경 참고 자료로 제공하는 UI
 
 완료 조건:
 - 회의가 한도에서 종료됨
 - 결정과 반대 의견이 보존됨
 - 평가 점수에 evidence가 연결됨
-- 점수만으로 자동 승진하지 않음
+- 평가 점수로 직급을 자동 변경하지 않음
 
 ### Phase 8 — 고급 라우팅, VM, 운영 자동화
 
@@ -1727,6 +1755,7 @@ app:
 organization:
   template: default-si-team
   default_language: ko-KR
+  default_grade_count: 5          # 기본 템플릿이 생성하는 직급 수. 사용자가 변경 가능
 
 workflow:
   max_task_attempts: 3
@@ -1738,6 +1767,7 @@ workflow:
   retry_max_seconds: 900
 
 models:
+  grade_selection_mode: priority   # 직급 가용 모델 풀의 기본 선택 방식. priority | task_based | budget_optimized
   routing_mode: task_based
   allow_unpriced_models: false
   allow_local_models: true
@@ -1805,6 +1835,7 @@ documents:
 - `network_mode: none`은 보안에 유리하지만 패키지 설치나 API 테스트를 막을 수 있다. 네트워크가 필요한 단계에는 목적지 allowlist를 둔 별도 정책을 적용한다.
 - `allow_paid_fallback: false`는 예상치 못한 비용을 방지한다. 사용자가 허용하기 전에는 대체 유료 모델을 호출하지 않는다.
 - `default_quality_tier`는 설치된 모델 프로필과 일치하도록 검증한다.
+- `default_grade_count`는 기본 템플릿이 만들 직급 수다. 직급별 가용 모델 풀이 비어 있으면 preflight에서 경고하고, 모델이 배정되지 않은 직급의 직원은 실행 전 사용 가능한 모델을 요구한다.
 - 예산 기본값은 조직/프로젝트 생성 시 사용자가 확인하도록 하고, 무제한으로 설정하지 않는다.
 - 위 숫자는 설치 직후 안전하게 시험할 수 있도록 제안한 초기 템플릿이지, 모든 공급자의 무료 티어/가격을 보장하는 값은 아니다. 실제 적용 전 provider 가격과 조직의 의도한 지출 한도를 확인한다.
 - `paid_calls_enabled_by_default: false`인 초기 설치는 유료 provider 호출을 명시적으로 활성화하고 한도를 확인하기 전에는 유료 호출을 하지 않는다. 사용자가 유료 호출을 켠 뒤에는 직원별 기본 한도가 자동 적용된다.
@@ -1819,7 +1850,7 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 
 1. 로컬 Docker Compose 설치가 문서대로 성공한다.
 2. 최초 관리자와 기본 조직 템플릿을 생성할 수 있다.
-3. 직무·직급·모델 정책이 독립적으로 설정된다.
+3. 직무, 직급, 직급별 가용 모델이 독립적으로 설정된다. 직급을 추가·삭제할 수 있고, 배정된 직원이 있는 직급의 삭제는 거부된다.
 4. 최소 두 개의 모델 provider adapter 또는 하나의 실제 provider와 mock provider가 작동한다.
 5. provider 비용/사용량과 실패 이유가 기록된다.
 6. 프로젝트를 로컬 Git 저장소에 연결할 수 있다.
@@ -1847,8 +1878,8 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 5. **작업별 Docker workspace**를 기본으로 하며, Docker socket을 작업 컨테이너에 노출하지 않는다.
 6. **Git 브랜치와 PR을 모든 코드 변경의 기본 흐름**으로 삼는다.
 7. **작성자 자기 승인 금지**, 필수 테스트와 독립 리뷰를 기본 게이트로 한다.
-8. **고성능 모델 사용은 위험·복잡도·예산에 따라 승격**하고 직급만으로 결정하지 않는다.
-9. **평가와 승진은 근거 기반 제안으로 시작**하며 점수만으로 권한을 자동 확대하지 않는다.
+8. **직원의 모델 사용 범위는 소속 직급의 가용 모델 풀로 제한**하고, 풀 내 선택은 위험·복잡도·예산과 우선순위에 따른다. 직급별 모델 배정은 사용자가 설정한다.
+9. **평가는 근거 기반으로 수행하되 직급을 자동 변경하지 않는다.** 직급 부여·변경은 사용자가 수동으로 수행하며, 점수만으로 권한을 자동 확대하지 않는다.
 10. **기본 설치에서 프로덕션 배포와 무제한 네트워크는 비활성화**한다.
 11. **모든 작업에는 최대 시간·시도 횟수·비용 한도**가 있어야 한다.
 12. **직원별 복수 사용량 제한**을 동시에 설정할 수 있어야 한다. 예: 월 비용 + rolling 5시간 토큰 + 일일 요청 수 + 고급 모델 월 비용.
@@ -1857,6 +1888,7 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 15. **문서 답변은 근거를 제시**하고 근거가 부족하면 모른다고 표시한다.
 16. **로컬 우선이지만 환경 capability를 명시**해 OS/VM/GPU가 없을 때 가능한 척하지 않는다.
 17. **초기 기본 템플릿은 안전하고 작동 가능한 출발점**으로 제공하며, 실제 비용/품질 측정으로 개선한다.
+18. **직급과 직급별 가용 모델은 사용자가 구성**한다. 직원은 개별 모델이 아니라 직급을 가지며, 직급 수를 늘리거나 줄일 수 있다.
 
 ---
 
@@ -1869,12 +1901,12 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 3. `PLAT-003`: Spring Boot Actuator health/readiness 및 설정 검증
 4. `PLAT-004`: PostgreSQL 도메인 매핑과 Flyway migration
 5. `PLAT-005`: 사용자/조직 CRUD 및 최초 관리자 설정
-6. `ORG-001`: Employee/Team/직무/직급 도메인 모델
-7. `ORG-002`: 기본 회사 템플릿 import
+6. `ORG-001`: Employee/Team/직무/직급(JobGrade) 도메인 모델, 직원 직급 배정, 직급 CRUD(추가·삭제·순서·책임·담당 업무 유형)
+7. `ORG-002`: 직급별 가용 모델 풀(GradeModel) 설정과 기본 회사 템플릿 import (기본 5단계 직급 포함)
 8. `AUD-001`: AuditEvent middleware/service
 9. `MODEL-001`: ModelAdapter 인터페이스와 MockProvider
 10. `MODEL-002`: 첫 실제 provider adapter 및 health check
-11. `MODEL-003`: ModelProfile/EmployeeModelPolicy와 비용 원장
+11. `MODEL-003`: ModelProfile/직급별 가용 모델 풀(GradeModel)과 비용 원장
 12. `TASK-001`: Task 상태 머신과 상태 전이 테스트
 13. `WF-001`: worker lease, retry, pause/resume
 14. `AGENT-001`: Agent Runtime의 context builder와 structured output
@@ -1909,7 +1941,7 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 
 이 플랫폼의 중심은 “AI 직원 여러 명”이 아니라 다음의 결합이다.
 
-- 지속적인 직원/조직 모델
+- 지속적인 직원/조직 모델과 사용자 정의 직급/모델 풀
 - 재개 가능한 업무 워크플로
 - 교체 가능한 다중 모델 런타임
 - 격리된 실제 개발환경
@@ -1920,4 +1952,4 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 
 이 구조를 따르면 로컬 환경에서 시작해 다른 PC나 자체 서버로 옮길 수 있고, 나중에 VM 실행기나 분산 worker를 추가해도 핵심 도메인 모델을 유지할 수 있다.
 
-가장 먼저 완성해야 할 수직 기능(vertical slice)은 **“CEO가 Task를 만들면, AI 직원이 격리된 Docker 환경에서 실제 코드를 수정하고 테스트를 실행해 PR을 제출하며, 다른 직원이 리뷰하고 모든 실행·비용·근거가 기록되는 것”**이다. 이 흐름이 안정적으로 작동한 뒤에 회의, 승진, 자율 유지보수 기능을 추가한다.
+가장 먼저 완성해야 할 수직 기능(vertical slice)은 **“CEO가 Task를 만들면, AI 직원이 격리된 Docker 환경에서 실제 코드를 수정하고 테스트를 실행해 PR을 제출하며, 다른 직원이 리뷰하고 모든 실행·비용·근거가 기록되는 것”**이다. 이 흐름이 안정적으로 작동한 뒤에 회의, 성과 평가, 자율 유지보수 기능을 추가한다.
