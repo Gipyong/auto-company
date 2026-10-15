@@ -58,16 +58,17 @@ public class TaskService {
 
     @Transactional
     public PeerRating submitRating(Task task, UUID raterId, UUID ratedId,
-                                   String category, float score, String comment) {
-        PeerRating rating = PeerRating.builder()
+                                   String category, float score, String comment, List<String> evidenceRefs) {
+        // Ratings now go through RatingEngineService for feedback context management
+        return ratingEngineService.submitFeedback(PeerRating.builder()
                 .task(task)
                 .raterEmployeeId(raterId)
                 .ratedEmployeeId(ratedId)
                 .category(Category.valueOf(category.toUpperCase()))
                 .score(score)
                 .comment(comment)
-                .build();
-        return ratingRepository.save(rating);
+                .evidenceRefs(evidenceRefs)
+                .build());
     }
 
     @Transactional

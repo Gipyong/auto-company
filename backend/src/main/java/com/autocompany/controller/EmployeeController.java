@@ -134,7 +134,7 @@ public class EmployeeController {
     public ResponseEntity<PeerRating> submitRating(@RequestBody RatingRequest request) {
         Task task = taskService.getTask(request.taskId).orElseThrow();
         PeerRating rating = taskService.submitRating(task, request.raterId, 
-                request.ratedId, request.category, request.score, request.comment);
+                request.ratedId, request.category, request.score, request.comment, request.evidenceRefs);
         return ResponseEntity.status(201).body(rating);
     }
 
@@ -192,6 +192,7 @@ public class EmployeeController {
         public String category;
         public float score;
         public String comment;
+        public List<String> evidenceRefs; // PR, commit, test, doc references
     }
 
     public static class MessageRequest {

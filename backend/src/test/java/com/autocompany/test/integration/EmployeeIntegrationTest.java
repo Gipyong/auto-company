@@ -3,6 +3,9 @@ package com.autocompany.integration;
 import com.autocompany.controller.EmployeeController;
 import com.autocompany.entity.JobGrade;
 import com.autocompany.entity.GradeModel;
+import com.autocompany.entity.Task;
+import com.autocompany.entity.PeerRating;
+import com.autocompany.entity.enums.Category;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -14,8 +17,12 @@ import com.autocompany.service.*;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -150,5 +157,35 @@ public class EmployeeIntegrationTest {
                 .andExpect(status().isOk());
         
         verify(jobGradeService).setGradeModels(any(), any());
+    }
+
+    @Test
+    public void testSubmitRatingEndpoint() throws Exception {
+        UUID taskId = UUID.randomUUID();
+        Task task = new Task();
+        task.setId(taskId);
+        
+        when(taskService.getTask(taskId)).thenReturn(Optional.of(task));
+        
+        PeerRating rating = new PeerRating();
+        rating.setId(UUID.randomUUID());
+        rating.setRaterEmployeeId(UUID.randomUUID());
+        rating.setRatedEmployeeId(UUID.randomUUID());
+        rating.setCategory(Category.CODE_QUALITY);
+        rating.setScore(4.5f);
+        rating.setComment("좋은 코드");
+        rating.setEvidenceRefs(List.of("PR-123"));
+        
+        when(taskService.submitRating(any(), any(), any(), anyString(), anyFloat(), anyString(), anyList()))
+                .thenReturn(rating);
+        
+        mockMvc.perform(post("/api/v1/ratings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"taskId\":\"" + taskId + "\",\"raterId\":\"" + UUID.randomUUID() + "\","
+                        + "\"ratedId\":\"" + UUID.randomUUID() + "\",\"category\":\"CODE_QUALITY\","
+                        + "\"score\":4.5,\"comment\":\"좋은 코드\",\"evidenceRefs\":[\"PR-123\"]}"))
+                .andExpect(status().isCreated());
+        
+        verify(taskService).submitRating(any(), any(), any(), anyString(), anyFloat(), anyString(), anyList());
     }
 }

@@ -81,11 +81,12 @@ public class TaskServiceIntegrationTest {
                 TaskType.TASK, "t", "p");
 
         PeerRating rating = taskService.submitRating(task, user.getId(), assignee.getId(),
-                "CODE_QUALITY", 4.5f, "좋은 코드입니다");
+                "CODE_QUALITY", 4.5f, "좋은 코드입니다", List.of("PR-123", "commit-abc"));
 
         assertNotNull(rating.getId());
         assertEquals(1, ratingRepository.findByRatedEmployeeId(assignee.getId()).size());
         assertEquals(4.5f, ratingRepository.findByRatedEmployeeId(assignee.getId()).get(0).getScore());
+        assertEquals(List.of("PR-123", "commit-abc"), ratingRepository.findByRatedEmployeeId(assignee.getId()).get(0).getEvidenceRefs());
     }
 
     @Test

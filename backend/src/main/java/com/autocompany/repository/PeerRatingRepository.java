@@ -10,6 +10,7 @@ import java.util.UUID;
 @Repository
 public interface PeerRatingRepository extends JpaRepository<PeerRating, UUID> {
     List<PeerRating> findByRatedEmployeeId(UUID ratedEmployeeId);
+    List<PeerRating> findByRatedEmployeeIdOrderByCreatedAtDesc(UUID ratedEmployeeId);
     List<PeerRating> findByTaskId(UUID taskId);
     List<PeerRating> findByRaterEmployeeId(UUID raterEmployeeId);
 }
