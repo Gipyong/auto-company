@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
 import java.util.*;
+import com.autocompany.entity.enums.*;
 
 
 
@@ -18,12 +19,13 @@ public class PeerRating {
     @JoinColumn(name = "task_id", nullable = false)
     private Task task;
     
-    @Column(nullable = false)
-    private UUID raterId;
+    @Column(name = "rater_employee_id", nullable = false)
+    private UUID raterEmployeeId;
     
-    @Column(nullable = false)
-    private UUID ratedId;
+    @Column(name = "rated_employee_id", nullable = false)
+    private UUID ratedEmployeeId;
     
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Category category = Category.CODE_QUALITY;
@@ -34,6 +36,7 @@ public class PeerRating {
     @Column(columnDefinition = "TEXT")
     private String comment;
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
 

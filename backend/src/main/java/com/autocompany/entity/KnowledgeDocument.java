@@ -28,9 +28,11 @@ public class KnowledgeDocument {
     
     private String sourceFilePath;
     
-    @Column(name = "embedding_blob", columnDefinition = "LONGTEXT")
+    @Column(name = "embedding_blob", columnDefinition = "TEXT")
     private String embedding; // pgvector용
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

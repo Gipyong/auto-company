@@ -11,7 +11,7 @@ import java.util.*;
 @Table(name = "users", uniqueConstraints = {@UniqueConstraint(columnNames = {"email"})})
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class User {
-    @Id @GeneratedValue(strategy = GenerationType.AUTO)
+    @Id
     private UUID id;
     
     @Column(nullable = false, unique = true)
@@ -22,10 +22,13 @@ public class User {
     
     private String companyName;
     
+    @Builder.Default
     private boolean isPremium = false;
     
+    @Builder.Default
     private String defaultModel = "llama3:8b";
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
 

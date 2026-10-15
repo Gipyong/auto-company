@@ -24,13 +24,17 @@ public class Project {
     @Column(columnDefinition = "TEXT")
     private String description;
     
+    @Builder.Default
     private String status = "PLANNING"; // PLANNING, ACTIVE, TESTING, COMPLETED
     
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
     
+    @Builder.Default
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL)
     private List<Task> tasks = new ArrayList<>();
     
+    @Builder.Default
     @ElementCollection
     @CollectionTable(name = "project_employees", joinColumns = @JoinColumn(name = "project_id"))
     private List<UUID> employees = new ArrayList<>();

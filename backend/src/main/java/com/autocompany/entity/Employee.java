@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
 import java.util.*;
+import com.autocompany.entity.enums.*;
 
 @Entity
 @Table(name = "employees")
@@ -23,31 +24,41 @@ public class Employee {
     @Column(nullable = false)
     private Role role;
     
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Rank rank = Rank.INTERN;
     
+    @Builder.Default
     @Column(nullable = false)
     private int level = 1;
     
+    @Builder.Default
     private String aiModel = "llama3:8b";
     private String dockerContainerId;
     
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Status status = Status.IDLE;
     
+    @Builder.Default
     private int totalTasks = 0;
+    @Builder.Default
     private int completedTasks = 0;
+    @Builder.Default
     private float avgRating = 0.0f;
     private String systemPrompt;
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
     
+    @Builder.Default
     @ElementCollection
     @CollectionTable(name = "employee_ratings", joinColumns = @JoinColumn(name = "employee_id"))
     @Column(name = "rating")
     private List<Float> ratings = new ArrayList<>();
     
+    @Builder.Default
     @ElementCollection
     @CollectionTable(name = "employee_feedback", joinColumns = @JoinColumn(name = "employee_id"))
     private List<String> feedbackComments = new ArrayList<>();

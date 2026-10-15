@@ -11,7 +11,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.autocompany.service.*;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.junit.jupiter.api.Assertions.*;
 
 @WebMvcTest(EmployeeController.class)
 public class EmployeeIntegrationTest {
@@ -34,18 +36,18 @@ public class EmployeeIntegrationTest {
     @Test
     public void testGetEmployeesEndpoint() throws Exception {
         // API 명세서 Section 3.1: 직원 조회 엔드포인트 테스트
-        mockMvc.perform(get("/api/v1/employees").param("userId", "test-id")
+        mockMvc.perform(get("/api/v1/employees").param("userId", "550e8400-e29b-41d4-a716-446655440000")
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
     }
 
     @Test
     public void testAskEndpoint() throws Exception {
-        // API 명세서 Section 3.4: CEO Ask Anything 엔드포인트 테스트
-        mockMvc.perform(get("/api/v1/ask")
-                .param("question", "현재 아키텍처는?")
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound()); // 아직 완전 구현 전이므로
+        // API 명세서 Section 3.4: CEO Ask Anything 엔드포인트 테스트 (POST /api/v1/ask)
+        mockMvc.perform(post("/api/v1/ask")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"현재 아키텍처는?\"}"))
+                .andExpect(status().isOk());
     }
 
     @Test
