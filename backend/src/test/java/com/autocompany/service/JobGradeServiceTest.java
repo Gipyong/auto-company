@@ -1,6 +1,7 @@
 package com.autocompany.service;
 
 import com.autocompany.entity.*;
+import com.autocompany.entity.enums.*;
 import com.autocompany.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -165,6 +166,7 @@ public class JobGradeServiceTest {
 
         // Create employee with this grade
         User user = new User();
+        user.setId(UUID.randomUUID());
         user.setEmail("test@test.com");
         user.setName("Test User");
         user = userRepository.save(user);
@@ -177,7 +179,8 @@ public class JobGradeServiceTest {
         employee.setStatus(Status.IDLE);
         employeeRepository.save(employee);
 
-        assertThrows(IllegalStateException.class, () -> jobGradeService.deleteGrade(grade.getId()));
+        final UUID gradeIdForDelete = grade.getId();
+        assertThrows(IllegalStateException.class, () -> jobGradeService.deleteGrade(gradeIdForDelete));
     }
 
     @Test
@@ -190,16 +193,17 @@ public class JobGradeServiceTest {
         grade.setModelSelectionMode(JobGrade.ModelSelectionMode.PRIORITY);
         grade.setStatus(JobGrade.Status.ACTIVE);
         grade = jobGradeService.createGrade(grade);
+        final UUID gradeIdForDelete = grade.getId();
 
         // Add grade model
         GradeModel gm = new GradeModel();
-        gm.setGradeId(grade.getId());
+        gm.setGradeId(gradeIdForDelete);
         gm.setModelProfileId(profile1Id);
         gm.setPriority(1);
         gm.setEnabled(true);
         gradeModelRepository.save(gm);
 
-        assertThrows(IllegalStateException.class, () -> jobGradeService.deleteGrade(grade.getId()));
+        assertThrows(IllegalStateException.class, () -> jobGradeService.deleteGrade(gradeIdForDelete));
     }
 
     @Test

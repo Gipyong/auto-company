@@ -1,15 +1,15 @@
 package com.autocompany.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
 import java.util.*;
 
-
-
 @Entity
 @Table(name = "users", uniqueConstraints = {@UniqueConstraint(columnNames = {"email"})})
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class User {
     @Id
     private UUID id;
@@ -31,4 +31,3 @@ public class User {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
-

@@ -23,10 +23,10 @@ public class RatingEngineService {
     private final PeerRatingRepository ratingRepository;
 
     // Context management constants (§15.3)
-    private static final int MAX_CONTEXT_BYTES = 10 * 1024; // 10KB per employee
-    private static final int MAX_RECENT_RATINGS = 50;
-    private static final int SUMMARY_TRIGGER_COUNT = 20;
-    private static final int RETENTION_MONTHS = 6;
+    static final int MAX_CONTEXT_BYTES = 10 * 1024; // 10KB per employee
+    static final int MAX_RECENT_RATINGS = 50;
+    static final int SUMMARY_TRIGGER_COUNT = 20;
+    static final int RETENTION_MONTHS = 6;
 
     /**
      * 피드백 제출 - 상호 피드백 루프 형성

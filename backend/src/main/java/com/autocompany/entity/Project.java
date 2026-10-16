@@ -1,11 +1,11 @@
 package com.autocompany.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
 import java.util.*;
-
-
 
 @Entity
 @Table(name = "projects")
@@ -32,6 +32,7 @@ public class Project {
     
     @Builder.Default
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL)
+    @JsonManagedReference
     private List<Task> tasks = new ArrayList<>();
     
     @Builder.Default
@@ -39,4 +40,3 @@ public class Project {
     @CollectionTable(name = "project_employees", joinColumns = @JoinColumn(name = "project_id"))
     private List<UUID> employees = new ArrayList<>();
 }
-

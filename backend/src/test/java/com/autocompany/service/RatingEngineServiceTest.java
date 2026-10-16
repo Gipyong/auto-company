@@ -26,10 +26,16 @@ public class RatingEngineServiceTest {
     private JobGradeRepository jobGradeRepository;
     @Autowired
     private PeerRatingRepository peerRatingRepository;
+    @Autowired
+    private TaskRepository taskRepository;
+    @Autowired
+    private ProjectRepository projectRepository;
 
+    private Task testTask;
     private UUID testEmployeeId;
     private UUID testGradeId;
     private UUID raterId;
+    private UUID testTaskId;
 
     @BeforeEach
     public void setUp() {
@@ -72,6 +78,21 @@ public class RatingEngineServiceTest {
                 .status(Status.IDLE)
                 .build());
         raterId = rater.getId();
+
+        Project project = projectRepository.save(Project.builder()
+                .user(user)
+                .name("Test Project")
+                .status("PLANNING")
+                .build());
+
+        testTask = taskRepository.save(Task.builder()
+                .project(project)
+                .assignee(employee)
+                .type(TaskType.TASK)
+                .title("Test Task")
+                .description("Test Description")
+                .build());
+        testTaskId = testTask.getId();
     }
 
     @Test
@@ -79,6 +100,7 @@ public class RatingEngineServiceTest {
         PeerRating feedback = new PeerRating();
         feedback.setRatedEmployeeId(testEmployeeId);
         feedback.setRaterEmployeeId(raterId);
+        feedback.setTask(testTask);
         feedback.setCategory(Category.CODE_QUALITY);
         feedback.setScore(4.5f);
         feedback.setComment("좋은 코드 구조입니다. 테스트 커버리지를 더 높이면 좋겠습니다.");
@@ -100,6 +122,7 @@ public class RatingEngineServiceTest {
             PeerRating fb = new PeerRating();
             fb.setRatedEmployeeId(testEmployeeId);
             fb.setRaterEmployeeId(raterId);
+            fb.setTask(testTask);
             fb.setCategory(Category.values()[i % Category.values().length]);
             fb.setScore(4.0f + (i * 0.2f));
             fb.setComment("피드백 " + i);
@@ -125,6 +148,7 @@ public class RatingEngineServiceTest {
             PeerRating fb = new PeerRating();
             fb.setRatedEmployeeId(testEmployeeId);
             fb.setRaterEmployeeId(raterId);
+            fb.setTask(testTask);
             fb.setCategory(Category.CODE_QUALITY);
             fb.setScore(4.0f);
             fb.setComment(largeComment);
@@ -157,6 +181,7 @@ public class RatingEngineServiceTest {
         PeerRating fb = new PeerRating();
         fb.setRatedEmployeeId(testEmployeeId);
         fb.setRaterEmployeeId(raterId);
+        fb.setTask(testTask);
         fb.setCategory(Category.CODE_QUALITY);
         fb.setScore(4.5f);
         fb.setComment("매우 상세한 피드백 내용입니다. ".repeat(20));
@@ -176,6 +201,7 @@ public class RatingEngineServiceTest {
         PeerRating fb = new PeerRating();
         fb.setRatedEmployeeId(testEmployeeId);
         fb.setRaterEmployeeId(raterId);
+        fb.setTask(testTask);
         fb.setCategory(Category.CODE_QUALITY);
         fb.setScore(4.5f);
         fb.setComment("테스트 피드백");

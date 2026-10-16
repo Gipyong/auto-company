@@ -11,6 +11,6 @@ import java.util.UUID;
 public interface JobGradeRepository extends JpaRepository<JobGrade, UUID> {
     List<JobGrade> findByOrganizationIdOrderByOrdinal(UUID organizationId);
     Optional<JobGrade> findByOrganizationIdAndCode(UUID organizationId, String code);
-    List<JobGrade> findByOrganizationIdAndStatus(JobGrade.Status status, UUID organizationId);
+    List<JobGrade> findByOrganizationIdAndStatus(UUID organizationId, JobGrade.Status status);
     boolean existsByOrganizationIdAndOrdinal(UUID organizationId, int ordinal);
 }

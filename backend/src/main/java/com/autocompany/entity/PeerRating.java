@@ -2,6 +2,8 @@ package com.autocompany.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.*;
 import java.util.*;
 import com.autocompany.entity.enums.*;
@@ -42,6 +44,7 @@ public class PeerRating {
     @Column(name = "context_weight")
     private float contextWeight = 1.0f; // Time-decay weight for prompt injection
     
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "evidence_refs", columnDefinition = "jsonb")
     private List<String> evidenceRefs; // PR, commit, test, doc references
     

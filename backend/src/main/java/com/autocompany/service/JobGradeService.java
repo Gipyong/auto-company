@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -47,7 +48,7 @@ public class JobGradeService {
         JobGrade existing = jobGradeRepository.findById(gradeId)
                 .orElseThrow(() -> new IllegalArgumentException("Grade not found: " + gradeId));
         
-        if (!existing.getOrdinal().equals(updated.getOrdinal()) 
+        if (existing.getOrdinal() != updated.getOrdinal() 
                 && jobGradeRepository.existsByOrganizationIdAndOrdinal(existing.getOrganizationId(), updated.getOrdinal())) {
             throw new IllegalArgumentException("Grade with this ordinal already exists: " + updated.getOrdinal());
         }
