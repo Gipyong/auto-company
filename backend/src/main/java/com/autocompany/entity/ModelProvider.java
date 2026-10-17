@@ -1,5 +1,6 @@
 package com.autocompany.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,6 +12,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "model_providers")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class ModelProvider {
     @Id @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;

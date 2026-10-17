@@ -13,9 +13,12 @@
 
 ### 🔧 현재 기능
 - 직원 채용 (`POST /api/v1/employees`)
+- 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
+- 직원 직급 배정 (`PATCH /api/v1/employees/{id}/grade`)
+- 모델 Provider/Profile 관리 (`GET/POST /api/v1/model-providers`, `GET/POST /api/v1/model-profiles`)
 - 업무 할당 (`POST /api/v1/tasks`)
-- Cost-Performance Router (작업별 모델 선택 + 승급)
-- 평가/등급 (`POST /api/v1/ratings` — Level 1~10, 직급 INTERN~LEAD)
+- 직급별 모델 풀 기반 Cost-Performance Router (PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)
+- 피드백 평가 (`POST /api/v1/ratings` — 근거 참조 `evidenceRefs` 포함, 자동 승급 없음)
 - 토론 (`POST /api/v1/messages`)
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합

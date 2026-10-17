@@ -6,7 +6,9 @@ import com.autocompany.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -19,6 +21,7 @@ public class EmployeeController {
     private final ProjectService projectService;
     private final TaskService taskService;
     private final CostPerformanceRouterService routerService;
+    private final ModelAdminService modelAdminService;
 
     // ==================== Employee ====================
     
@@ -102,6 +105,34 @@ public class EmployeeController {
     public ResponseEntity<Void> setGradeModels(@PathVariable UUID id, @RequestBody List<GradeModel> models) {
         jobGradeService.setGradeModels(id, models);
         return ResponseEntity.ok().build();
+    }
+
+    // ==================== Models ====================
+
+    // 조직의 provider 목록
+    @GetMapping("/model-providers")
+    public ResponseEntity<List<ModelProvider>> getModelProviders(@RequestParam UUID organizationId) {
+        return ResponseEntity.ok(modelAdminService.getProvidersByOrganization(organizationId));
+    }
+
+    // provider 생성 (healthStatus는 UNKNOWN으로 시작)
+    @PostMapping("/model-providers")
+    public ResponseEntity<ModelProvider> createModelProvider(@RequestBody ModelProvider provider) {
+        ModelProvider created = modelAdminService.createProvider(provider);
+        return ResponseEntity.status(201).body(created);
+    }
+
+    // 조직의 모델 프로필 목록
+    @GetMapping("/model-profiles")
+    public ResponseEntity<List<ModelProfile>> getModelProfiles(@RequestParam UUID organizationId) {
+        return ResponseEntity.ok(modelAdminService.getProfilesByOrganization(organizationId));
+    }
+
+    // 모델 프로필 생성
+    @PostMapping("/model-profiles")
+    public ResponseEntity<ModelProfile> createModelProfile(@RequestBody ProfileRequest request) {
+        ModelProfile created = modelAdminService.createProfile(request.providerId, request.toProfile());
+        return ResponseEntity.status(201).body(created);
     }
 
     // ==================== Project ====================
@@ -193,6 +224,47 @@ public class EmployeeController {
         public float score;
         public String comment;
         public List<String> evidenceRefs; // PR, commit, test, doc references
+    }
+
+    public static class ProfileRequest {
+        public UUID providerId;
+        public String name;
+        public String providerModelId;
+        public List<String> capabilities;
+        public Integer qualityTier;
+        public BigDecimal inputCostPerMillion;
+        public BigDecimal outputCostPerMillion;
+        public Integer contextWindow;
+        public Integer maxOutputTokens;
+        public Boolean supportsStreaming;
+        public Boolean supportsToolCalling;
+        public Boolean supportsJsonSchema;
+        public ModelProfile.LatencyClass latencyClass;
+        public Boolean localOnly;
+        public Boolean enabled;
+        public Map<String, Object> metadata;
+
+        public ModelProfile toProfile() {
+            ModelProfile profile = new ModelProfile();
+            profile.setName(name);
+            profile.setProviderModelId(providerModelId);
+            profile.setCapabilities(capabilities);
+            profile.setQualityTier(qualityTier);
+            profile.setInputCostPerMillion(inputCostPerMillion);
+            profile.setOutputCostPerMillion(outputCostPerMillion);
+            profile.setContextWindow(contextWindow);
+            profile.setMaxOutputTokens(maxOutputTokens);
+            profile.setSupportsStreaming(Boolean.TRUE.equals(supportsStreaming));
+            profile.setSupportsToolCalling(Boolean.TRUE.equals(supportsToolCalling));
+            profile.setSupportsJsonSchema(Boolean.TRUE.equals(supportsJsonSchema));
+            if (latencyClass != null) {
+                profile.setLatencyClass(latencyClass);
+            }
+            profile.setLocalOnly(Boolean.TRUE.equals(localOnly));
+            profile.setEnabled(enabled == null || enabled);
+            profile.setMetadata(metadata);
+            return profile;
+        }
     }
 
     public static class MessageRequest {

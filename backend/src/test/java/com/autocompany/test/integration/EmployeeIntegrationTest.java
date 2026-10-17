@@ -3,6 +3,8 @@ package com.autocompany.integration;
 import com.autocompany.controller.EmployeeController;
 import com.autocompany.entity.JobGrade;
 import com.autocompany.entity.GradeModel;
+import com.autocompany.entity.ModelProfile;
+import com.autocompany.entity.ModelProvider;
 import com.autocompany.entity.Task;
 import com.autocompany.entity.PeerRating;
 import com.autocompany.entity.enums.Category;
@@ -23,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,6 +51,9 @@ public class EmployeeIntegrationTest {
     
     @MockBean
     private CostPerformanceRouterService routerService;
+
+    @MockBean
+    private ModelAdminService modelAdminService;
 
     @Test
     public void testGetEmployeesEndpoint() throws Exception {
@@ -187,5 +193,79 @@ public class EmployeeIntegrationTest {
                 .andExpect(status().isCreated());
         
         verify(taskService).submitRating(any(), any(), any(), anyString(), anyFloat(), anyString(), anyList());
+    }
+
+    @Test
+    public void testGetModelProvidersEndpoint() throws Exception {
+        UUID organizationId = UUID.randomUUID();
+        ModelProvider provider = new ModelProvider();
+        provider.setId(UUID.randomUUID());
+        provider.setOrganizationId(organizationId);
+        provider.setName("openai");
+        provider.setProviderType(ModelProvider.ProviderType.OPENAI_COMPATIBLE);
+
+        when(modelAdminService.getProvidersByOrganization(organizationId)).thenReturn(List.of(provider));
+
+        mockMvc.perform(get("/api/v1/model-providers").param("organizationId", organizationId.toString())
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(modelAdminService).getProvidersByOrganization(organizationId);
+    }
+
+    @Test
+    public void testCreateModelProviderEndpoint() throws Exception {
+        ModelProvider provider = new ModelProvider();
+        provider.setId(UUID.randomUUID());
+        provider.setName("openai");
+        provider.setProviderType(ModelProvider.ProviderType.OPENAI_COMPATIBLE);
+
+        when(modelAdminService.createProvider(any(ModelProvider.class))).thenReturn(provider);
+
+        mockMvc.perform(post("/api/v1/model-providers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"organizationId\":\"550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"name\":\"openai\",\"providerType\":\"OPENAI_COMPATIBLE\","
+                        + "\"baseUrl\":\"http://localhost:8000\"}"))
+                .andExpect(status().isCreated());
+
+        verify(modelAdminService).createProvider(any(ModelProvider.class));
+    }
+
+    @Test
+    public void testGetModelProfilesEndpoint() throws Exception {
+        UUID organizationId = UUID.randomUUID();
+        ModelProfile profile = new ModelProfile();
+        profile.setId(UUID.randomUUID());
+        profile.setName("gpt-4o-mini");
+        profile.setProviderModelId("gpt-4o-mini");
+
+        when(modelAdminService.getProfilesByOrganization(organizationId)).thenReturn(List.of(profile));
+
+        mockMvc.perform(get("/api/v1/model-profiles").param("organizationId", organizationId.toString())
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(modelAdminService).getProfilesByOrganization(organizationId);
+    }
+
+    @Test
+    public void testCreateModelProfileEndpoint() throws Exception {
+        UUID providerId = UUID.randomUUID();
+        ModelProfile profile = new ModelProfile();
+        profile.setId(UUID.randomUUID());
+        profile.setName("gpt-4o-mini");
+        profile.setProviderModelId("gpt-4o-mini");
+
+        when(modelAdminService.createProfile(eq(providerId), any(ModelProfile.class))).thenReturn(profile);
+
+        mockMvc.perform(post("/api/v1/model-profiles")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"providerId\":\"" + providerId + "\",\"name\":\"gpt-4o-mini\","
+                        + "\"providerModelId\":\"gpt-4o-mini\",\"qualityTier\":2,"
+                        + "\"inputCostPerMillion\":0.15,\"outputCostPerMillion\":0.6}"))
+                .andExpect(status().isCreated());
+
+        verify(modelAdminService).createProfile(eq(providerId), any(ModelProfile.class));
     }
 }

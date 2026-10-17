@@ -12,4 +12,5 @@ public interface ModelProfileRepository extends JpaRepository<ModelProfile, UUID
     List<ModelProfile> findByProviderId(UUID providerId);
     List<ModelProfile> findByEnabledTrue();
     Optional<ModelProfile> findByProviderIdAndName(UUID providerId, String name);
+    List<ModelProfile> findByProviderOrganizationId(UUID organizationId);
 }

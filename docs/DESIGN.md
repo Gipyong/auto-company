@@ -1391,11 +1391,15 @@ API prefix: `/api/v1`
 
 ### Models
 
-- `GET /model-providers`
-- `POST /model-providers`
-- `POST /model-providers/{id}/health-check`
-- `GET /model-profiles`
-- `POST /model-profiles`
+- `GET /model-providers?organizationId={org_id}` — 조직의 provider 목록
+- `POST /model-providers` — provider 생성. `name`은 조직 내 유일해야 하며, API 키는 `secret_ref`(환경변수/secret store 참조)만 저장한다
+- `POST /model-providers/{id}/health-check` — provider 상태 점검 (ModelAdapter 계층 구현 후 제공)
+- `GET /model-profiles?organizationId={org_id}` — 조직의 provider들에 속한 모델 프로필 목록
+- `POST /model-profiles` — 모델 프로필 생성. `providerId`가 존재해야 하며, `name`은 provider 내에서 유일해야 한다. 가격이 불명확하면 `input_cost_per_million`/`output_cost_per_million`을 비워 두고 0으로 입력하지 않는다(§5.8)
+
+`POST /model-providers` 요청 본문: `organizationId`, `name`, `providerType`(필수), `baseUrl`, `secretRef`, `enabled`, `rateLimitPolicy`(선택). 생성 시 `healthStatus`는 `UNKNOWN`으로 시작한다
+
+`POST /model-profiles` 요청 본문: `providerId`, `name`, `providerModelId`(필수), `capabilities`, `qualityTier`(0~3), `inputCostPerMillion`, `outputCostPerMillion`, `contextWindow`, `maxOutputTokens`, `supportsStreaming`, `supportsToolCalling`, `supportsJsonSchema`, `latencyClass`, `localOnly`, `enabled`, `metadata`(선택)
 
 ### Projects / Tasks
 
