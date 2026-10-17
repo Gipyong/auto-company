@@ -999,11 +999,28 @@ public interface ModelAdapter {
 5. 현재 provider health 및 quota 상태 확인
 6. 예상 비용과 context window 확인
 7. 작업 위험도와 풀 내 승격 조건 확인
-8. 선택 방식(`model_selection_mode`)에 따라 모델 선택. 기본은 `priority`(우선순위 순)이며, `task_based`/`budget_optimized`는 이후 확장한다
+8. 선택 방식(`model_selection_mode`)에 따라 모델 선택. 기본은 `priority`(우선순위 순)이며, `task_based`(작업 특성 기반)과 `budget_optimized`(비용 최적화)도 구현됨
 9. 예산 내에서 예상 품질/비용 균형이 좋은 모델 선택
 10. 선택 이유를 기록
 
-예상 품질을 정확히 수치화할 수 없으므로 라우터는 가짜 정밀 점수를 만들지 않는다. 초기에는 `tier`, capability, 비용, 가용성, 최근 성공률을 사용하고 선택 근거를 남긴다. 선택 로직(우선순위 순, 작업별 지정 등)의 세부 규칙은 추후 구현한다. 이 절은 현재 그 데이터 구조와 확장 지점만 확정한다.
+예상 품질을 정확히 수치화할 수 없으므로 라우터는 가짜 정밀 점수를 만들지 않는다. `tier`, capability, 비용을 사용하여 설명 가능한 규칙 기반으로 선택하며, 선택 근거를 `ModelSelectionResult.selectionReason`으로 기록한다.
+
+#### 선택 모드 상세
+
+- **PRIORITY**: 직급의 `GradeModel` 우선순위 순서로 정렬된 풀에서, 활성화된 모델 중 첫 번째 사용 가능한 모델을 선택한다. 운영자가 직접 우선순위를 설정하면 그 순서대로 모델이 사용된다.
+- **TASK_BASED**: 작업 유형(`TaskType`)별 필요 `capability`과 `TaskClassification`(복잡도·품질 요구·비용 예산)을 기반으로 모델을 스코어링한다. 복잡도와 품질 요구가 높은 작업일수록 높은 `quality_tier`의 모델을 선호하며, 충족하는 모델 중에서는 비용 효율이 좋은 모델을 선택한다. 품질 요구를 충족하는 모델이 없으면 가장 높은 품질 모델을 폴백 선택한다.
+- **BUDGET_OPTIMIZED**: capability 필터를 통과한 모든 모델 중, 최소 품질 등급(`minQualityTier`)을 충족하는 가장 저렴한 모델을 선택한다. 최소 품질을 충족하는 모델이 없으면 가장 저렴한 모델을 폴백 선택한다.
+
+작업 유형별 필요 capability 매핑:
+- `DOCUMENTATION`, `TEST`: `json_mode`, `code`
+- `BUG`, `REVIEW`: `code`, `reasoning`
+- `TASK`: `code`, `reasoning`
+- `STORY`: `code`, `reasoning`, `json_mode`
+- `SPIKE`, `EPIC`: `code`, `reasoning`, `tool_calling`, `json_mode`
+
+복잡도·품질 요구에 따른 최소 품질 등급(`minQualityTier`) 산정: `complexityScore × qualityRequirement` 점수가 0.0~1.0 범위에서 1~3 등급으로 매핑된다.
+
+비용 정보가 없는(미상) 모델은 비용 비교에서 제외한다. 로컬 모델의 비용을 0으로 간주하지 않는다는 원칙(§13)에 따라, `input_cost_per_million`/`output_cost_per_million`이 모두 미설정인 모델은 `BUDGET_OPTIMIZED`의 최저 비용 비교 및 `TASK_BASED`의 비용 효율 스코어링에서 제외되며, 모든 후보의 비용이 미상이면 우선순위 순 첫 번째 모델을 폴백 선택한다.
 
 ### 9.3 Fallback 규칙
 
