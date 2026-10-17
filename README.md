@@ -12,6 +12,7 @@
 - **Docker**: `Dockerfile` 기반 (네트워크 허용 시 사용 가능)
 
 ### 🔧 현재 기능
+- 웹 콘솔 (`http://localhost:8080` — 브라우저에서 직원·직급·모델·업무를 직접 조작, 모바일 반응형)
 - 기본 회사 템플릿 import (`POST /api/v1/organizations/template/import` — 5단계 직급 L1~L5 + 기본 8인 조직 직원 생성, 이미 직급/직원이 있으면 409)
 - 직원 채용 (`POST /api/v1/employees`)
 - 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
@@ -34,14 +35,18 @@ cp .env.example .env
 # 2. Docker Compose (앱 + PostgreSQL)
 docker compose up --build -d
 docker compose ps
-curl http://localhost:8080/api/v1/employees
 
-# 3. QEMU VM에서 Spring Boot 테스트
+# 3. 브라우저에서 웹 콘솔 접속
+open http://localhost:8080
+#  → '시작' 탭에서 새 ID 생성 → 저장 & 연결 → 기본 회사 템플릿 가져오기
+#  → 직원/직급/모델/업무 탭에서 직접 조작 (모바일 브라우저도 동일 주소)
+
+# 4. QEMU VM에서 Spring Boot 테스트
 ssh -p 2222 ubuntu@localhost
 cd ~/autocompany/backend
 mvn compile test -B
 
-# 5. 직접 직원 구성 테스트
+# 5. (선택) API로 직접 직원 채용
 curl -X POST http://localhost:8080/api/v1/employees \
   -H "Content-Type: application/json" \
   -d '{"userId":"test","name":"테스트개발","role":"DEVELOPER"}'

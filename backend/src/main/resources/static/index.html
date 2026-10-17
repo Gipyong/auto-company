@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>AutoCompany 콘솔</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🤖 <strong>AutoCompany</strong> <span class="brand-sub">CEO 콘솔</span></div>
+  <div id="ctxChip" class="ctx-chip">설정 필요</div>
+</header>
+
+<nav class="tabbar" id="tabbar">
+  <button class="tab active" data-tab="setup">시작</button>
+  <button class="tab" data-tab="employees">직원</button>
+  <button class="tab" data-tab="grades">직급</button>
+  <button class="tab" data-tab="models">모델</button>
+  <button class="tab" data-tab="work">업무</button>
+</nav>
+
+<main>
+
+  <!-- ===== 시작 ===== -->
+  <section class="tabpage active" id="tab-setup">
+    <div class="card">
+      <h2>1. 조직 연결</h2>
+      <p class="hint">로컬 단일 사용자 기준입니다. 조직 ID와 사용자 ID를 입력하고 저장하세요. 처음이라면 "새 ID 생성"을 누르세요.</p>
+      <label for="setupOrgId">조직 ID (organizationId)</label>
+      <input id="setupOrgId" autocomplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      <label for="setupUserId">사용자 ID (userId)</label>
+      <input id="setupUserId" autocomplete="off" placeholder="비우면 조직 ID와 동일하게 사용">
+      <div class="row">
+        <button id="btnNewIds" class="btn ghost">새 ID 생성</button>
+        <button id="btnSaveCtx" class="btn primary">저장 &amp; 연결</button>
+      </div>
+      <div id="connStatus" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. 기본 회사 템플릿</h2>
+      <p class="hint">5단계 직급(L1~L5)과 기본 8인 조직(리드/아키텍트/개발자 2명/QA/보안·DevOps/문서 담당/디자이너)을 한 번에 생성합니다. 조직에 이미 직급이 있거나 사용자에게 이미 직원이 있으면 거부됩니다(409).</p>
+      <button id="btnImportTemplate" class="btn primary">기본 회사 템플릿 가져오기</button>
+      <div id="templateResult" class="status"></div>
+    </div>
+  </section>
+
+  <!-- ===== 직원 ===== -->
+  <section class="tabpage" id="tab-employees">
+    <div class="card" id="empDetail" hidden>
+      <div class="row between">
+        <h2 id="empDetailTitle">직원 상세</h2>
+        <button id="btnEmpClose" class="btn ghost small">닫기</button>
+      </div>
+      <div id="empDetailBody"></div>
+      <div class="row">
+        <select id="empGradeSelect" aria-label="직급 선택"></select>
+        <button id="btnAssignGrade" class="btn primary">직급 배정</button>
+        <button id="btnLoadEvals" class="btn ghost">평가 리포트</button>
+      </div>
+      <div id="evalsBox"></div>
+    </div>
+    <div class="list" id="empList"></div>
+  </section>
+
+  <!-- ===== 직급 ===== -->
+  <section class="tabpage" id="tab-grades">
+    <div class="card">
+      <div class="row between">
+        <h2 id="gradeFormTitle">직급 추가</h2>
+        <button id="btnGradeCancel" class="btn ghost small" hidden>취소</button>
+      </div>
+      <label for="gradeCode">코드 (조직 내 고유, 예: L1)</label>
+      <input id="gradeCode" autocomplete="off">
+      <label for="gradeName">이름</label>
+      <input id="gradeName" autocomplete="off">
+      <label for="gradeOrdinal">순서 (ordinal, 클수록 상위)</label>
+      <input id="gradeOrdinal" type="number" min="1" inputmode="numeric">
+      <label for="gradeResp">책임 범위</label>
+      <textarea id="gradeResp" rows="2"></textarea>
+      <label for="gradeTaskTypes">담당 업무 유형 (콤마 구분: TASK, BUG, TEST, REVIEW, DOCUMENTATION, EPIC, STORY, SPIKE)</label>
+      <input id="gradeTaskTypes" autocomplete="off">
+      <label for="gradeMode">모델 선택 방식</label>
+      <select id="gradeMode">
+        <option value="PRIORITY">PRIORITY (우선순위 순)</option>
+        <option value="TASK_BASED">TASK_BASED (작업 특성 기반)</option>
+        <option value="BUDGET_OPTIMIZED">BUDGET_OPTIMIZED (비용 최적화)</option>
+      </select>
+      <button id="btnGradeSave" class="btn primary">저장</button>
+    </div>
+
+    <div class="card" id="poolPanel" hidden>
+      <div class="row between">
+        <h2>모델 풀 — <span id="poolGradeName"></span></h2>
+        <button id="btnPoolClose" class="btn ghost small">닫기</button>
+      </div>
+      <p class="hint">아래 모델을 클릭하면 풀에 추가됩니다. 풀의 순서가 우선순위입니다(위가 최우선).</p>
+      <div id="poolAvailable" class="chips"></div>
+      <h3>풀 (우선순위 순)</h3>
+      <div id="poolSelected" class="list"></div>
+      <button id="btnPoolSave" class="btn primary">풀 저장</button>
+    </div>
+
+    <div class="list" id="gradeList"></div>
+  </section>
+
+  <!-- ===== 모델 ===== -->
+  <section class="tabpage" id="tab-models">
+    <div class="card">
+      <h2>Provider 추가</h2>
+      <label for="provName">이름</label>
+      <input id="provName" autocomplete="off" placeholder="예: OpenAI, 로컬 Ollama">
+      <label for="provType">유형</label>
+      <select id="provType">
+        <option value="OPENAI_COMPATIBLE">OPENAI_COMPATIBLE</option>
+        <option value="ANTHROPIC">ANTHROPIC</option>
+        <option value="OLLAMA">OLLAMA</option>
+        <option value="CUSTOM">CUSTOM</option>
+      </select>
+      <label for="provBaseUrl">Base URL (선택)</label>
+      <input id="provBaseUrl" autocomplete="off" placeholder="http://localhost:11434">
+      <label for="provSecretRef">Secret 참조 (선택 — 값이 아니라 환경변수/secret 이름만)</label>
+      <input id="provSecretRef" autocomplete="off" placeholder="OPENAI_API_KEY">
+      <button id="btnProvSave" class="btn primary">Provider 추가</button>
+    </div>
+    <div class="list" id="providerList"></div>
+
+    <div class="card">
+      <h2>모델 Profile 추가</h2>
+      <label for="profProvider">Provider</label>
+      <select id="profProvider"></select>
+      <label for="profName">이름</label>
+      <input id="profName" autocomplete="off" placeholder="예: gpt-4o-mini">
+      <label for="profModelId">Provider 모델 ID (필수)</label>
+      <input id="profModelId" autocomplete="off" placeholder="gpt-4o-mini">
+      <div class="row2">
+        <div>
+          <label for="profTier">Quality Tier (0~3)</label>
+          <input id="profTier" type="number" min="0" max="3" inputmode="numeric">
+        </div>
+        <div>
+          <label for="profLatency">Latency</label>
+          <select id="profLatency">
+            <option value="">UNKNOWN</option>
+            <option value="LOW">LOW</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="HIGH">HIGH</option>
+          </select>
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label for="profInCost">입력 비용 ($/1M, 비우면 미상)</label>
+          <input id="profInCost" type="number" step="0.01" inputmode="decimal">
+        </div>
+        <div>
+          <label for="profOutCost">출력 비용 ($/1M, 비우면 미상)</label>
+          <input id="profOutCost" type="number" step="0.01" inputmode="decimal">
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label for="profCtx">Context window</label>
+          <input id="profCtx" type="number" inputmode="numeric">
+        </div>
+        <div>
+          <label for="profMaxOut">Max output tokens</label>
+          <input id="profMaxOut" type="number" inputmode="numeric">
+        </div>
+      </div>
+      <label for="profCaps">Capabilities (콤마: code, reasoning, json_mode, tool_calling)</label>
+      <input id="profCaps" autocomplete="off">
+      <label class="check"><input id="profTool" type="checkbox"> tool calling 지원</label>
+      <label class="check"><input id="profJson" type="checkbox"> JSON schema 지원</label>
+      <label class="check"><input id="profStream" type="checkbox"> streaming 지원</label>
+      <label class="check"><input id="profLocal" type="checkbox"> local only</label>
+      <button id="btnProfSave" class="btn primary">Profile 추가</button>
+    </div>
+    <div class="list" id="profileList"></div>
+  </section>
+
+  <!-- ===== 업무 ===== -->
+  <section class="tabpage" id="tab-work">
+    <div class="card">
+      <h2>프로젝트</h2>
+      <label for="projName">이름</label>
+      <input id="projName" autocomplete="off">
+      <label for="projDesc">설명</label>
+      <input id="projDesc" autocomplete="off">
+      <button id="btnProjSave" class="btn primary">프로젝트 생성</button>
+      <div class="list" id="projectList"></div>
+    </div>
+
+    <div class="card">
+      <h2>업무 할당</h2>
+      <label for="taskProject">프로젝트</label>
+      <select id="taskProject"></select>
+      <label for="taskAssignee">담당 직원</label>
+      <select id="taskAssignee"></select>
+      <label for="taskType">유형</label>
+      <select id="taskType">
+        <option>TASK</option><option>BUG</option><option>STORY</option><option>EPIC</option>
+        <option>SPIKE</option><option>DOCUMENTATION</option><option>REVIEW</option><option>TEST</option>
+      </select>
+      <label for="taskTitle">제목</label>
+      <input id="taskTitle" autocomplete="off">
+      <label for="taskPrompt">지시 (prompt)</label>
+      <textarea id="taskPrompt" rows="3"></textarea>
+      <button id="btnTaskSave" class="btn primary">업무 생성</button>
+      <div class="list" id="taskList"></div>
+      <div id="taskDetail"></div>
+    </div>
+
+    <div class="card">
+      <h2>피드백 평가</h2>
+      <label for="ratingTask">업무</label>
+      <select id="ratingTask"></select>
+      <label for="ratingRater">평가자</label>
+      <select id="ratingRater"></select>
+      <label for="ratingRated">대상</label>
+      <select id="ratingRated"></select>
+      <label for="ratingCategory">카테고리</label>
+      <select id="ratingCategory">
+        <option>CODE_QUALITY</option><option>LOGIC</option>
+        <option>COOPERATION</option><option>DOC_COMPLETENESS</option>
+      </select>
+      <label for="ratingScore">점수 (0~5)</label>
+      <input id="ratingScore" type="number" min="0" max="5" step="0.5" value="4" inputmode="decimal">
+      <label for="ratingComment">코멘트</label>
+      <textarea id="ratingComment" rows="2"></textarea>
+      <label for="ratingEvidence">근거 (콤마: PR-123, commit-abc, test-report)</label>
+      <input id="ratingEvidence" autocomplete="off">
+      <button id="btnRatingSave" class="btn primary">평가 제출</button>
+    </div>
+
+    <div class="card">
+      <h2>메시지</h2>
+      <label for="msgProject">프로젝트</label>
+      <select id="msgProject"></select>
+      <label for="msgSender">보내는 직원</label>
+      <select id="msgSender"></select>
+      <label for="msgTarget">받는 직원</label>
+      <select id="msgTarget"></select>
+      <label for="msgType">유형</label>
+      <select id="msgType">
+        <option>DISCUSSION</option><option>FEEDBACK</option><option>CODE_PROPOSAL</option>
+        <option>INTERVIEW_Q</option><option>INTERVIEW_A</option>
+      </select>
+      <label for="msgContent">내용</label>
+      <textarea id="msgContent" rows="2"></textarea>
+      <button id="btnMsgSave" class="btn primary">메시지 전송</button>
+    </div>
+
+    <div class="card">
+      <h2>CEO Ask</h2>
+      <label for="askQ">질문</label>
+      <textarea id="askQ" rows="2" placeholder="예: 현재 아키텍처는?"></textarea>
+      <button id="btnAsk" class="btn primary">질문하기</button>
+      <div id="askA" class="status"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

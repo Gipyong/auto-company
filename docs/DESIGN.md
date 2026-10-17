@@ -1475,6 +1475,16 @@ API prefix: `/api/v1`
 
 API 변경은 OpenAPI 스키마와 계약 테스트를 함께 갱신한다. 오류 응답에는 안정적인 `error_code`, 사용자 메시지, correlation ID를 포함하되 비밀정보와 내부 스택 트레이스를 노출하지 않는다.
 
+### Web Console (초기 UI)
+
+장기 UI는 UI-001에서 `apps/web`(Next.js) 기반 CEO 대시보드로 구현한다(§18). 그 전 단계로, 현재 구현된 API를 브라우저에서 직접 사용할 수 있는 경량 웹 콘솔을 제공한다.
+
+- 위치: `backend/src/main/resources/static/`(index.html, app.js, style.css). Spring Boot가 `/`에서 정적으로 서빙하며, 별도 빌드 도구와 외부 의존성을 추가하지 않는다(검증 환경인 VM은 npm/이미지 pull 네트워크가 제한됨)
+- 범위: 현재 구현된 기능만 노출한다 — 기본 회사 템플릿 import, 직원 목록/직급 배정/평가 리포트, 직급 CRUD와 모델 풀, provider/profile 생성·목록, 프로젝트·업무 생성, 피드백 평가, 메시지, CEO Ask
+- 인증: 기존 API와 동일하게 로컬 단일 사용자를 전제로 하며, 화면에서 organizationId/userId를 입력받아 localStorage에 보관한다. API 키·secret은 화면에 표시하지 않는다(secretRef 참조만 입력)
+- 모바일: 모바일 우선 반응형 레이아웃을 적용한다(좁은 화면에서는 하단 탭 내비게이션, 카드형 목록, 터치 친화 버튼)
+- 프로젝트/업무 목록 조회 API가 아직 없으므로, 콘솔은 생성한 프로젝트·업무를 localStorage에 기억해 표시한다. 서버 목록 API가 추가되면(§17 Projects/Tasks) 서버 조회로 대체한다
+
 ---
 
 ## 18. 저장소 디렉터리 구조
