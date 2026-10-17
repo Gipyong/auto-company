@@ -1376,7 +1376,7 @@ API prefix: `/api/v1`
 - `PATCH /employees/{employee_id}`
 - `POST /employees/{employee_id}/pause`
 - `POST /employees/{employee_id}/retire`
-- `GET /employees/{employee_id}/evaluations`
+- `GET /employees/{employee_id}/evaluations` — 직급 변경 판단 참고 자료(§15.4). 피드백 이력(최근 20건, 아카이브 제외), 표본 수(전체/활성), 최근 30일 평균 점수, 근거(evidenceRefs) 포함 건수, 참여 평가자 수(신뢰도), 카테고리별 평균을 집계해 반환한다. 이 수치로 직급을 자동 변경하지 않는다
 - `PATCH /employees/{employee_id}/grade` — 직원의 직급 배정/변경(수동)
 
 ### Job Grades (직급)

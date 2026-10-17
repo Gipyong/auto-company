@@ -15,6 +15,7 @@
 - 직원 채용 (`POST /api/v1/employees`)
 - 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
 - 직원 직급 배정 (`PATCH /api/v1/employees/{id}/grade`)
+- 직원 평가 리포트 (`GET /api/v1/employees/{id}/evaluations` — 피드백 이력·집계, 직급 변경 참고용)
 - 모델 Provider/Profile 관리 (`GET/POST /api/v1/model-providers`, `GET/POST /api/v1/model-profiles`)
 - 업무 할당 (`POST /api/v1/tasks`)
 - 직급별 모델 풀 기반 Cost-Performance Router (PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)

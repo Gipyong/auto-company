@@ -55,6 +55,9 @@ public class EmployeeIntegrationTest {
     @MockBean
     private ModelAdminService modelAdminService;
 
+    @MockBean
+    private RatingEngineService ratingEngineService;
+
     @Test
     public void testGetEmployeesEndpoint() throws Exception {
         mockMvc.perform(get("/api/v1/employees").param("userId", "550e8400-e29b-41d4-a716-446655440000")
@@ -267,5 +270,38 @@ public class EmployeeIntegrationTest {
                 .andExpect(status().isCreated());
 
         verify(modelAdminService).createProfile(eq(providerId), any(ModelProfile.class));
+    }
+
+    @Test
+    public void testGetEvaluationsEndpoint() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        RatingEngineService.EvaluationReport report = RatingEngineService.EvaluationReport.builder()
+                .employeeId(employeeId)
+                .name("Test Employee")
+                .grade("Mid")
+                .totalFeedbackCount(3)
+                .activeFeedbackCount(3)
+                .build();
+
+        when(ratingEngineService.getEvaluationReport(employeeId)).thenReturn(Optional.of(report));
+
+        mockMvc.perform(get("/api/v1/employees/{id}/evaluations", employeeId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(ratingEngineService).getEvaluationReport(employeeId);
+    }
+
+    @Test
+    public void testGetEvaluationsEndpointNotFound() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+
+        when(ratingEngineService.getEvaluationReport(employeeId)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/employees/{id}/evaluations", employeeId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound());
+
+        verify(ratingEngineService).getEvaluationReport(employeeId);
     }
 }

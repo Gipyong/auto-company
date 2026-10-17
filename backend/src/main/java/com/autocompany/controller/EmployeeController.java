@@ -22,6 +22,7 @@ public class EmployeeController {
     private final TaskService taskService;
     private final CostPerformanceRouterService routerService;
     private final ModelAdminService modelAdminService;
+    private final RatingEngineService ratingEngineService;
 
     // ==================== Employee ====================
     
@@ -42,6 +43,14 @@ public class EmployeeController {
     @GetMapping("/employees/{id}")
     public ResponseEntity<Employee> getEmployee(@PathVariable UUID id) {
         return employeeService.getEmployee(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 직원 평가 리포트 (직급 변경 참고 자료, §15.4)
+    @GetMapping("/employees/{id}/evaluations")
+    public ResponseEntity<RatingEngineService.EvaluationReport> getEvaluations(@PathVariable UUID id) {
+        return ratingEngineService.getEvaluationReport(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
