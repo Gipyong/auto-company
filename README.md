@@ -12,6 +12,7 @@
 - **Docker**: `Dockerfile` 기반 (네트워크 허용 시 사용 가능)
 
 ### 🔧 현재 기능
+- 기본 회사 템플릿 import (`POST /api/v1/organizations/template/import` — 5단계 직급 L1~L5 + 기본 8인 조직 직원 생성, 이미 직급/직원이 있으면 409)
 - 직원 채용 (`POST /api/v1/employees`)
 - 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
 - 직원 직급 배정 (`PATCH /api/v1/employees/{id}/grade`)

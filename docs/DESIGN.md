@@ -760,11 +760,13 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 
 권장 기본값:
 
-- L1 Junior: 범위가 명확한 작업, 제한된 쓰기 권한, 승인 없는 merge/deploy 불가
-- L2 Mid: 독립적인 기능 구현, 단위 테스트, 일반 PR 리뷰 가능
-- L3 Senior: 복잡한 구현, 코드 리뷰, 작업 분해 지원. 본인 작성 PR은 승인 불가
-- L4 Lead: 작업 우선순위 및 모듈 수준 결정 제안, 여러 직원 조정
-- L5 Architect: 아키텍처 및 고위험 설계 검토. 운영 배포 권한은 직급과 별도로 부여
+- L1 Junior: 범위가 명확한 작업, 제한된 쓰기 권한, 승인 없는 merge/deploy 불가. 기본 `task_types`: `TASK`
+- L2 Mid: 독립적인 기능 구현, 단위 테스트, 일반 PR 리뷰 가능. 기본 `task_types`: `TASK`, `BUG`, `DOCUMENTATION`
+- L3 Senior: 복잡한 구현, 코드 리뷰, 작업 분해 지원. 본인 작성 PR은 승인 불가. 기본 `task_types`: `TASK`, `BUG`, `TEST`, `REVIEW`, `DOCUMENTATION`
+- L4 Lead: 작업 우선순위 및 모듈 수준 결정 제안, 여러 직원 조정. 기본 `task_types`: `EPIC`, `STORY`, `REVIEW`, `SPIKE`
+- L5 Architect: 아키텍처 및 고위험 설계 검토. 운영 배포 권한은 직급과 별도로 부여. 기본 `task_types`: `SPIKE`, `REVIEW`, `EPIC`
+
+기본 템플릿 import는 위 5단계 직급과 §6.1의 기본 8인 조직 직원을 한 트랜잭션으로 생성한다. 생성된 직급은 `is_template_default=true`로 표시한다. 조직에 이미 직급이 있거나 해당 사용자에게 이미 직원이 있으면 import를 409로 거부한다(중복/혼합 방지).
 
 직급이 높을수록 설계, 검증, 리뷰처럼 복잡하고 정확성이 중요한 업무에 중점을 둔다. 이는 책임 범위로 표현하며, 담당 가능한 업무 유형(`task_types`)과 함께 설정한다.
 
@@ -1381,6 +1383,7 @@ API prefix: `/api/v1`
 ### Organization / Employees
 
 - `GET /organizations/current`
+- `POST /organizations/template/import` — 기본 회사 템플릿 import. 요청 본문은 `organizationId`, `userId`. §6.2의 5단계 직급(L1~L5, `is_template_default=true`)과 §6.1의 기본 8인 조직 직원을 한 트랜잭션으로 생성한다. 조직에 이미 직급이 있거나 해당 사용자에게 이미 직원이 있으면 `409 Conflict`로 거부한다
 - `GET /employees`
 - `POST /employees`
 - `GET /employees/{employee_id}`

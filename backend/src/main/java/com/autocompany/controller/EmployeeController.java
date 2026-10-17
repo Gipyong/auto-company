@@ -23,6 +23,23 @@ public class EmployeeController {
     private final CostPerformanceRouterService routerService;
     private final ModelAdminService modelAdminService;
     private final RatingEngineService ratingEngineService;
+    private final CompanyTemplateService companyTemplateService;
+
+    // ==================== Organization ====================
+
+    // 기본 회사 템플릿 import (5단계 직급 + 기본 8인 조직, §6.1·§6.2)
+    @PostMapping("/organizations/template/import")
+    public ResponseEntity<CompanyTemplateService.TemplateImportResult> importDefaultTemplate(
+            @RequestBody TemplateImportRequest request) {
+        CompanyTemplateService.TemplateImportResult result =
+                companyTemplateService.importDefaultCompanyTemplate(request.organizationId, request.userId);
+        return ResponseEntity.status(201).body(result);
+    }
+
+    @ExceptionHandler(TemplateAlreadyImportedException.class)
+    public ResponseEntity<Map<String, String>> handleTemplateAlreadyImported(TemplateAlreadyImportedException e) {
+        return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+    }
 
     // ==================== Employee ====================
     
@@ -201,6 +218,11 @@ public class EmployeeController {
     }
 
     // Request DTOs
+    public static class TemplateImportRequest {
+        public UUID organizationId;
+        public UUID userId;
+    }
+
     public static class HireRequest {
         public UUID userId;
         public String name;

@@ -58,6 +58,9 @@ public class EmployeeIntegrationTest {
     @MockBean
     private RatingEngineService ratingEngineService;
 
+    @MockBean
+    private CompanyTemplateService companyTemplateService;
+
     @Test
     public void testGetEmployeesEndpoint() throws Exception {
         mockMvc.perform(get("/api/v1/employees").param("userId", "550e8400-e29b-41d4-a716-446655440000")
@@ -303,5 +306,35 @@ public class EmployeeIntegrationTest {
                 .andExpect(status().isNotFound());
 
         verify(ratingEngineService).getEvaluationReport(employeeId);
+    }
+
+    @Test
+    public void testTemplateImportEndpoint() throws Exception {
+        UUID organizationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        when(companyTemplateService.importDefaultCompanyTemplate(organizationId, userId))
+                .thenReturn(new CompanyTemplateService.TemplateImportResult(organizationId, List.of(), List.of()));
+
+        mockMvc.perform(post("/api/v1/organizations/template/import")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"organizationId\":\"" + organizationId + "\",\"userId\":\"" + userId + "\"}"))
+                .andExpect(status().isCreated());
+
+        verify(companyTemplateService).importDefaultCompanyTemplate(organizationId, userId);
+    }
+
+    @Test
+    public void testTemplateImportConflictReturns409() throws Exception {
+        UUID organizationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        when(companyTemplateService.importDefaultCompanyTemplate(organizationId, userId))
+                .thenThrow(new TemplateAlreadyImportedException("Organization already has job grades"));
+
+        mockMvc.perform(post("/api/v1/organizations/template/import")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"organizationId\":\"" + organizationId + "\",\"userId\":\"" + userId + "\"}"))
+                .andExpect(status().isConflict());
     }
 }
