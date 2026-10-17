@@ -1,8 +1,9 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.3  
+> 버전: 1.4  
 > 상태: 구현 기준 설계 초안 — Java/Spring Boot 백엔드 기준  
 > 목표: 로컬 우선(Local-first)으로 실행 가능하며, 다른 PC·서버로 재현 가능하게 배포할 수 있는 AI 기반 소프트웨어 개발 조직 플랫폼  
+> 변경 요약(v1.4): **사용자(=플랫폼 운영자)를 CEO가 아니라 외주 고객(Client) 포지션으로 명확화**한다. 고객은 프로젝트 요구사항만 제출하고, 설계·구현·검증·디자인 등 기술 결정은 AI 직원들이 내부 회의와 토론으로 자율 수행한다. 요구사항이 애매하면 직원들이 협의 후 **최소한의 질문으로 최대한의 의도를 뽑아내는 구조화된 질문**(기능별 개별 체크박스, 선택형, 자유 텍스트 병행)을 고객에게 전달하고, 고객은 오프라인 상태여도 세션 큐에 쌓인 질문을 나중에 확인·응답할 수 있다. 요구사항 확정 시점의 기록은 **동결(Freeze)되어 불변 기록**으로 남고, 추가 요구사항이 필요하면 새 세션을 연다. 요구사항 확정 후에는 직원들이 자율로 작업을 분해·배정·실행한다(§28 요구사항 명확화 파이프라인, §29 자율 오케스트레이션). 기존 직원/직급/모델/예산/workspace 설계는 유지하며, 도출된 의결 사항은 §25에 누적한다. v1.3의 피드백 전용 평가 시스템(§15)은 유지된다.
 > 변경 요약(v1.3): 피드백 전용 평가 시스템 도입. 승진/강등 제거, 상호 피드백으로 업무 품질 개선. 피드백 컨텍스트는 적절한 크기(10KB/직원)에서 호환성 있게 유지(요약·가중치 감쇠·보존 기간). 자세한 내용은 §15를 참고한다.
 
 ---
@@ -23,6 +24,8 @@
 8. **Human-readable artifacts**: 모든 중요한 결정은 ADR, 이슈, PR, 테스트 결과, 문서 버전과 연결한다.
 9. **Reproducibility**: 설정, 프롬프트, 도구 버전, 모델 식별자, Git 커밋 및 테스트 환경을 가능한 한 기록한다.
 10. **Safe defaults**: 설치 직후 작동하는 기본 템플릿을 제공하되, 위험한 권한이나 자동 배포는 기본 비활성화한다.
+11. **Client faces requirements only**: 사용자는 외주 고객(Client) 포지션이다. 고객에게 *먼저* 묻는 것은 프로젝트의 요구사항(제품 범위, 우선순위, 품질 기준, 제약)뿐이다. 설계 방식, 기술 스택 선택, 구현 검증 방법 등 기술적 결정은 고객에게 질문으로 전가하지 않고 직원들의 내부 회의/Decision으로 처리한다. 다만 "묻지 않는다"는 "받지 않는다"가 아니다: 고객이 자발적으로 전문적 요구사항을 제시하면 그것은 전문성 신호이며, 직원들은 그 내용을 명시적 제약으로 수용해 기록하고 해당 영역의 불필요한 질문을 면제한다(§28.2). 고객의 시간과 주의는 가장 희소한 자원으로 취급하며, 질문은 최소 개수로 유지한다(§28).
+12. **Requirements are frozen records**: 요구사항 명확화 세션이 동결되면 그 기록은 변경 불가능(immutability)한 기록 문서다. 과거 요구사항을 몰래 고치지 않고, 필요 시 새 세션·새 버전으로만 진화시킨다. 모든 후속 작업 분해는 동결된 요구사항 기록을 근거로 참조한다(§28).
 
 ### 설계상 중요한 구분
 
@@ -31,6 +34,9 @@
 - `AgentRun`: 특정 작업을 수행하기 위한 일회성/재개 가능한 실행.
 - `Task`: 사람이 이해할 수 있는 업무와 완료 조건.
 - `WorkflowRun`: 여러 Task와 승인 단계를 묶는 장기 실행 프로세스.
+- `ClarificationSession`: 고객 요구사항을 뽑아내기 위해 직원들이 협의해 만드는 질문 세트와 고객 응답의 단위(§28).
+- `RequirementSet`: 세션 동결 시점의 요구사항 기록 영역. 불변이며 이후 작업 분해의 근거가 된다(§28).
+- `OrchestratorCycle`: 골(Goal) 접수부터 작업 분해, 배정, 실행, 재계획까지의 자율 실행 사이클 기록(§29).
 - `ModelProfile`: 모델 제공자·모델 ID·가격·능력·한도 설정.
 - `GradeModel`: 특정 직급에 배정된 가용 모델과 그 사용 우선순위.
 - `Workspace`: Git 작업 트리와 격리된 개발 실행환경.
@@ -47,9 +53,11 @@
 - 로컬 웹 콘솔
 - 회사·조직·직원 관리
 - 직무/직급 관리와 직급별 가용 모델/도구 권한 설정
+- **고객 골(Goal) 입력**: 고객이 단일 프롬프트로 프로젝트 요청("블로그 사이트 만들어줘" 등)을 제출
+- **요구사항 명확화 파이프라인**: 직원들 내부 협의 → 고객 대상 구조화된 질문 세션 → 응답 수집 → 요구사항 동결(§28)
+- **자율 오케스트레이션**: 동결된 요구사항으로 Epic/Story/Task 분해와 직원별 배정을 플랫폼 스스로 수행. 고객/CEO가 직원마다 일일이 할당하지 않음(§29)
 - 프로젝트 및 Git 저장소 연결
-- 요구사항을 Epic/Story/Task로 분해하는 작업 흐름
-- 직원별 모델 호출 및 도구 실행
+- 직원별 모델 호출 및 도구 실행(초기에는 Mock 모델로 파이프라인 검증, 이후 실제 provider 어댑터 연결)
 - 작업별 격리 Docker workspace
 - 브랜치 생성, 변경사항 확인, PR 생성 또는 로컬 PR 기록
 - 코드 리뷰와 필수 테스트 게이트
@@ -77,6 +85,8 @@
 - 기본 설정에서 프로덕션 자동 배포
 - Docker 컨테이너를 완전한 보안 경계로 간주
 - 특정 상용 모델이나 특정 벤더 SDK에 도메인 로직을 종속
+- **고객에게 내부 기술 선택(프레임워크, DB, 라이브러리 등)을 질문으로 전가**하는 것. 고객 질문은 요구사항에 한한다(§28.2)
+- **알림 푸시 폭탄**: 웹에서 실시간 푸시가 어렵고 알림이 잦으면 고객 경험을 해치므로, 미응답 질문은 세션 큐로 관리하고 고객이 접속했을 때 확인하는 방식을 기본으로 한다
 - “직급이 높으면 무조건 더 좋은 모델”이라는 고정 규칙 (배정 여부는 사용자가 판단하며 시스템이 강제하지 않는다)
 - 직원 수가 많을수록 품질이 좋아진다고 가정
 - 평가 점수만으로 직급을 자동으로 강등/승진하는 것
@@ -137,7 +147,8 @@ API 키는 UI에 평문으로 다시 표시하지 않는다. 로컬 설치에서
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                         CEO Web UI                           │
+│                       Client Console                          │
+│ Goal 입력 · 요구사항 세션(질문/응답) · 진행 상황 요약            │
 │ Dashboard · Org Chart · Employees · Projects · Tasks · PRs   │
 │ Meetings · Documents · Costs · Policies · Audit              │
 └──────────────────────────────┬──────────────────────────────┘
@@ -148,11 +159,19 @@ API 키는 UI에 평문으로 다시 표시하지 않는다. 로컬 설치에서
 └───────────────┬─────────────────────────────┬────────────────┘
                 │                             │
 ┌───────────────▼───────────────┐ ┌───────────▼────────────────┐
-│ Workflow / Scheduler          │ │ Read Models / Query        │
-│ Task state machine            │ │ Dashboard · Search · RAG   │
-│ Retry · Pause · Resume        │ │ Documents · Project status  │
-│ Dependency management         │ └────────────────────────────┘
+│ Orchestration / Scheduler     │ │ Read Models / Query        │
+│ Goal intake → 명확화 → 분해    │ │ Dashboard · Search · RAG   │
+│ Task state machine            │ │ Documents · Project status │
+│ Retry · Pause · Resume        │ └────────────────────────────┘
+│ Dependency management         │
+│ 자동 배정 · 재계획 · 에스컬레이션 │
 └───────────────┬───────────────┘
+                │
+┌───────────────▼──────────────────────────────────────────────┐
+│                Requirement Clarification Engine                │
+│ 내부 협의 회의 개설 · 질문 구성(최소 질문) · 역할 검토 체인        │
+│ 세션 큐(고객 오프라인 대응) · 동결(Freeze) · 요구사항 기록         │
+└───────────────┬──────────────────────────────────────────────┘
                 │
 ┌───────────────▼──────────────────────────────────────────────┐
 │                     Agent Runtime                            │
@@ -170,7 +189,7 @@ API 키는 UI에 평문으로 다시 표시하지 않는다. 로컬 설치에서
                                   │ Isolated Workspace Runner  │
                                   │ Docker · Resource limits    │
                                   │ Per-task worktree/branch    │
-                                  └────────────────────────────┘
+                                  └─────────────────────────────┘
 
 Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 ```
@@ -179,18 +198,20 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 1. **Organization Service**: 직원, 직무, 직급(JobGrade), 직급별 가용 모델, 팀, 권한
 2. **Project Service**: 프로젝트 설정, 저장소, 목표, 환경
-3. **Task Service**: 백로그, 할당, 의존성, 완료 조건
-4. **Workflow Engine**: 상태 전이, 재시도, 재개, 타임아웃
-5. **Agent Runtime**: 컨텍스트 구성, 모델 호출, 도구 호출, 결과 파싱
-6. **Model Router**: 모델 선택, 비용 추정, 제한 및 fallback
-7. **Tool Broker**: 권한 검증 후 도구 실행 요청
-8. **Workspace Manager**: 격리 환경 생성/정리/제한
-9. **Git Integration**: 브랜치, diff, 커밋, PR/리뷰 동기화
-10. **Quality Gate**: 테스트, 린트, 타입 검사, 보안 검사, 승인 정책
-11. **Knowledge & Docs**: 문서, 검색, 인덱싱, 최신성 확인
-12. **Evaluation Service**: 평가 데이터, 근거, 평가자 (평가는 성과 관측용이며 직급을 자동 변경하지 않는다)
-13. **Budget & Usage**: 모델 호출량, 금액, 실행 자원, 프로젝트 예산
-14. **Audit & Observability**: 중요한 변경, 추적 ID, 오류, 메트릭
+3. **Goal & Clarification Service**: 고객 골 접수, 명확화 세션, 구조화 질문, 고객 응답, 요구사항 동결 기록(§28)
+4. **Orchestration Service**: 골→작업 분해, 자동 배정, 실행 사이클, 재계획, 고객 에스컬레이션(§29)
+5. **Task Service**: 백로그, 의존성, 완료 조건
+6. **Workflow Engine**: 상태 전이, 재시도, 재개, 타임아웃
+7. **Agent Runtime**: 컨텍스트 구성, 모델 호출, 도구 호출, 결과 파싱
+8. **Model Router**: 모델 선택, 비용 추정, 제한 및 fallback
+9. **Tool Broker**: 권한 검증 후 도구 실행 요청
+10. **Workspace Manager**: 격리 환경 생성/정리/제한
+11. **Git Integration**: 브랜치, diff, 커밋, PR/리뷰 동기화
+12. **Quality Gate**: 테스트, 린트, 타입 검사, 보안 검사, 승인 정책
+13. **Knowledge & Docs**: 문서, 검색, 인덱싱, 최신성 확인
+14. **Evaluation Service**: 평가 데이터, 근거, 평가자 (평가는 성과 관측용이며 직급을 자동 변경하지 않는다)
+15. **Budget & Usage**: 모델 호출량, 금액, 실행 자원, 프로젝트 예산
+16. **Audit & Observability**: 중요한 변경, 추적 ID, 오류, 메트릭
 
 모듈은 초기에 하나의 모놀리식 백엔드 코드베이스 안에 구현하되, 명확한 패키지 경계와 인터페이스를 유지한다. 초기부터 마이크로서비스로 쪼개지 않는다.
 
@@ -202,7 +223,7 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 
 - **Frontend**: Next.js + TypeScript
 - **핵심 백엔드**: Java 21 LTS 이상 + Spring Boot 3.x 계열의 지원되는 안정 버전. 실제 저장소 생성 시 Java/Spring Boot 호환 조합을 검증하고 버전을 고정한다.
-- **빌드 도구**: Gradle Wrapper 우선(또는 팀 표준이 Maven이면 Maven Wrapper). 빌드 도구 버전을 저장소에 고정한다.
+- **빌드 도구**: Maven (실제 저장소가 `backend/pom.xml` 기준 Maven으로 구현됨. 빌드 도구 버전은 저장소에 고정한다)
 - **API 계약/검증**: Spring MVC 또는 필요 시 WebFlux, Jakarta Bean Validation, OpenAPI 생성 및 계약 테스트. 기본값은 Spring MVC이며, 비동기 I/O가 필요한 이유가 입증될 때 WebFlux를 선택한다.
 - **보안**: Spring Security, 명시적 RBAC, CSRF/CORS 설정, 비밀정보 외부화
 - **DB 접근 / migrations**: Spring Data JPA + Hibernate, Flyway. 복잡한 집계나 잠금 쿼리는 JDBC/jOOQ 등으로 명시적으로 보완 가능
@@ -284,7 +305,9 @@ Shared foundations: PostgreSQL · Redis · Artifact storage · Audit log
 - `id`, `organization_id`, `team_id: UUID | null`
 - `employee_code: str` — 조직 내 unique
 - `display_name: str`
-- `job_family: developer | architect | product | designer | qa | security | devops | technical_writer | analyst | operations | custom`
+- `job_family: developer | architect | product | designer | qa | security | devops | technical_writer | analyst | operations | custom`  
+
+  **구현 노트**: 현재 구현된 초기 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`다. 위 `job_family`는 확장 목록이며, 현재 구현과 충돌 시 구현 값을 기준으로 읽는다(§28.4 검토 체인은 이 Role 값들로 구성한다)
 - `specialties: List<String>` — 예: `python`, `react`, `postgresql`, `security`
 - `grade_id: UUID` — 소속 직급(`JobGrade`) 참조. 직급명·순서·책임 범위·가용 모델은 직급이 소유한다
 - `employment_status: active | paused | on_leave | retired`
@@ -734,6 +757,67 @@ Workspace는 작업 단위가 기본이다. 직원별 장기 컨테이너를 기
 
 중요한 정책 변경, 권한 상승, PR 승인/병합, 비밀 설정 변경, workspace 실행, 배포 작업은 감사 로그를 남긴다. 일반 사용자가 감사 로그를 수정/삭제할 수 없도록 한다.
 
+### 5.23 ClarificationSession (요구사항 명확화 세션)
+
+고객의 골(Goal)에 대해 직원들이 협의해 생성하는 구조화된 질문 세트와 고객 응답의 단위다. 요구사항이 애매할 때 열리고, 직원들 사이 검토를 통과한 질문만 고객에게 전달된다(§28).
+
+- `id`, `project_id`, `goal_text: text` — 고객이 제출한 원문 요청(불변, 감사용)
+- `session_number: int` — 같은 프로젝트 내 세션 순번. 이전 세션 동결 후 부족분이 발견되면 `session_number+1`로 새 세션을 연다
+- `status: open | waiting_client | review | frozen | cancelled`
+  - `open`: 직원들이 내부 협의·질문 구성·역할 검토 체인을 진행 중
+  - `waiting_client`: 검토 완료된 질문 세트가 고객 응답 대기 큐에 있음. 고객이 오프라인이어도 상태가 유지되며, 고객이 접속해 콘솔에서 답변할 때까지 기다린다
+  - `review`: 고객 답변 후 직원들이 답변을 해석·검증하는 단계(협의 회의)
+  - `frozen`: 요구사항 기록이 동결되어 불변이 됨. 이후 어떤 수정도 불가(§28.6)
+  - `cancelled`: 고객이 요청 취소하거나 직원들 협의가 요구사항 부존재로 결론
+- `opened_by_employee_id` — 세션을 연 직원(기본: 프로젝트 리드/PM 역할)
+- `closed_at: datetime | null`, `frozen_at: datetime | null`
+- `client_notice_read: bool` — 고객이 콘솔에서 이 세션을 확인했는지 여부(알림 대신 세션 큐 표시용)
+- `client_extra_note: text | null` — 세션마다 항상 제공되는 고정 자유 입력란: "전문적인 요구사항이 있으면 추가로 작성해주세요". 기술 스택 강제, 보안/컴플라이언스 규정, 특정 기술 금지 등 고객이 자발적으로 제시하는 전문 요구를 수집한다(§28.2)
+- `max_questions: int` — 세션당 질문 수 상한. 기본 5. "최소 질문으로 최대 의도" 원칙을 강제하는 상한값
+- `parent_session_id: UUID | null` — 이전 세션에서 이어진 경우 참조
+
+규칙:
+- 고객은 질문에 **즉시 답할 의무가 없다**. 세션은 `waiting_client` 상태로 큐에 유지되고 고객이 나중에 접속했을 때 확인한다(§28.5)
+- `frozen` 상태의 세션 내용은 DB/API/UI 어느 경로로도 수정할 수 없다. 수정 시도는 409로 거부하고 AuditEvent에 남긴다
+- 새로운 요구사항이 필요하면 기존 세션을 재개하지 않고 새 세션(`session_number` 증가, `parent_session_id` 참조)을 연다
+
+### 5.24 ClarificationQuestion (구조화된 질문)
+
+세션에 속한 개별 질문이다. 최소 개수로 최대 의도를 뽑아내는 것이 목적이다(§28.3).
+
+- `id`, `session_id`, `display_order: int`
+- `question_type: single_choice | multi_choice | short_text | free_text | number_range`
+- `prompt: text` — 고객이 이해할 수 있는 산업 용어 질문. 내부 기술 용어(프레임워크, DB 등)는 고객 질문에 쓰지 않는다
+- `options: JSONB` — `[{ "value": str, "label": str, "description": str | null }]`. `single_choice`/`multi_choice`에 필수
+- `allow_other: bool` — 기본 true. "그 외 다른 기능/다른 의견" 자유 입력 허용 여부. 선택지가 잘못됐거나 완전하지 않을 때 고객이 직접 의견을 적을 수 있게 한다(§28.3)
+- `other_text: text | null` — 고객의 자유 텍스트 답변
+- `selected_values: List<String> | null` — 고객 답변(체크박스/선택형)
+- `numeric_answer: { min_value, max_value } | null` — `number_range` 유형의 답변
+- `answer_status: unanswered | answered | skipped | expired`
+- `created_by_employee_id`, `reviewed_by_employee_ids: JSONB` — 역할 검토 체인 통과 이력(§28.4)
+- `assumption_if_skipped: text | null` — 고객이 오래 응답하지 않을 때 직원들이 기본 가정으로 진행하기로 한 경우 그 가정과 근거. 기록되면 `answer_status=skipped`로 남는다
+
+규칙:
+- `multi_choice`는 **기능 단위로 개별 체크박스**를 제공한다. "로그인", "글쓰기", "글 수정", "댓글", "좋아요"는 각각 별도 옵션이다. 기능 묶음 옵션("기본 패키지" 같은)을 대신 쓰지 않는다
+- 고객에게 묻는 질문은 **요구사항 관련만**이다(§0 원칙 11). 기술 선택 질문은 내부 회의(§13)로 처리
+- 고객 응답은 즉시 `answered`로 기록되고, 동결 전에는 세션 상태에서만 유효하다
+
+### 5.25 RequirementSet (동결된 요구사항 기록)
+
+세션이 동결되는 시점의 요구사항 기록이다. 이후 작업 분해(§29)와 구현 검증(Epic/Story/Task의 인수 조건)의 공식 근거가 된다.
+
+- `id`, `organization_id`, `project_id`, `session_id`
+- `version: int` — 같은 프로젝트 내 RequirementSet 순번. 새 세션이 동결되면 이전 버전은 유지되고 새 버전이 추가된다
+- `content: JSONB` — `{ functional_requirements: [], non_functional_requirements: [], constraints: [], out_of_scope: [], open_risks: [] }`. 각 항목은 `source: client_declared | client_answered | employee_derived` 출처 표기와 근거(`question_id`, `goal_text` 발췌, 고객 답변 발췌)를 참조한다. 고객이 자발적으로 제시한 전문 요구는 `client_declared`로 기록돼 이후 분해·검증 단계에서 무시되지 않게 한다(§28.2)
+- `status: draft | frozen | superseded`
+- `frozen_by_employee_ids: JSONB` — 동결을 승인한 직원 목록(검토 체인 최종 승인자들)
+- `derived_task_ids: JSONB` — 이 기록에서 생성된 Task 목록(역방향 추적용)
+- `created_at`, `frozen_at`
+
+규칙:
+- `frozen` 이후 `content`는 불변이다. 요구사항이 바뀌면 새 세션→새 RequirementSet 버전으로 진화하고, 이전 버전은 `superseded`로 표시해 보존한다
+- 프로젝트 내 모든 Task의 요구사항 근거는 이 기록을 참조해야 한다. 근거가 없는 요구사항을 일부 직원이 임의 추가해서 작업을 늘리지 못한다
+
 ---
 
 ## 6. 직원 기본값과 조직 템플릿
@@ -849,6 +933,19 @@ BLOCKED
 모든 상태 변경은 `TaskTransition` 또는 이벤트 로그로 기록한다. 유효하지 않은 상태 전이는 API에서 거부한다.
 
 ### 7.2 주요 워크플로
+
+`RequirementDiscoveryWorkflow` (§28 파이프라인 대응)
+1. 고객이 골(Goal) 단일 프롬프트를 제출한다
+2. 플랫폼이 프로젝트 리드(또는 PM) 직원으로 세션을 열고 내부 협의 회의를 시작한다
+3. 직원들(아키텍트, QA, 보안/DevOps, 디자이너 등 참석)이 원문 요청을 분석한다. 모호성, 누락 기능, 위험, 범위 경계를 리스트업 한다
+4. 직원들 사이 토론으로 "고객에게 묻지 않아도 알 수 있는 것"과 "반드시 물어야 하는 것"을 분리한다
+5. 물어야 하는 것만 최소 개수의 구조화된 질문으로 구성한다(기능별 개별 체크박스 + 기타 의견)
+6. 역할 검토 체인(§28.4)을 통과한 질문 세트를 `waiting_client` 큐에 올린다
+7. 고객이 접속하면 콘솔에서 미응답 세션을 보고 답변한다(오프라인이면 큐에 대기)
+8. 답변 수집 후 직원들이 답변을 해석해 요구사항 목록을 작성하고, 이해 불명확한 답변은 후속 질문으로 이례적 재확인을 한다
+9. 검토 체인이 요구사항 기록을 승인하면 세션을 동결(Freeze)한다. 불변 RequirementSet이 생성된다
+10. 요구사항이 여전히 부족하면 새 세션을 열고 3~9를 반복한다. 세션 반복 상한(예: 3회)을 넘으면 고객에게 진행 상황과 블로커를 통지하고 대기한다
+11. 요구사항이 충분하면 자율 오케스트레이션(§29)으로 작업 분해에 들어간다
 
 `ProjectBootstrapWorkflow`
 1. 프로젝트 설정 검증
@@ -1182,6 +1279,10 @@ Task는 다음 조건을 충족해야 완료된다.
 
 합의가 없으면 반대 의견을 삭제하지 않고 Decision에 기록한다.
 
+### 13.4 기술 결정은 고객에게 묻지 않는다
+
+직원들의 토론 대상(예: 블로그 사이트의 세션 기반 로그인 vs JWT, RDBMS 선택, 라이브러리 채택)은 내부 Decision/회의로 처리한다. 고객에게 전달되는 질문은 이 협의 이후에도 확신할 수 없는 **제품 요구사항 불확실성**으로 한정하고, 그 흐름과 질문 포맷은 §28에서 정의한다. "고객의 시간을 아끼는 방법은 잘 묻는 것이 아니라 아예 묻지 않아도 되는 것을 스스로 정하는 것"을 기본 방침으로 한다.
+
 ---
 
 ## 14. 문서화와 지식 질의응답
@@ -1430,6 +1531,21 @@ API prefix: `/api/v1`
 - `POST /tasks/{id}/resume`
 - `POST /tasks/{id}/cancel`
 
+### Goals / Requirements (고객 대상, §28)
+
+- `POST /projects/{project_id}/goal` — 고객이 골(단일 프롬프트)을 제출. 요청 본문: `{ userId, goalText }`. 서비스가 ClarificationSession을 `open` 상태로 만들고 내부 협의(모의 모델 기반)를 개시한다. 응답: session 정보
+- `GET /projects/{project_id}/clarification-sessions` — 세션 목록(상태·질문 수·응답 진행도 포함)
+- `GET /clarification-sessions/{id}` — 세션 상세(질문 목록, 각 질문의 응답 상태 포함)
+- `POST /clarification-sessions/{id}/answers` — 고객 답변 제출. 요청 본문: `{ userId, answers: [{ questionId, selectedValues, otherText }] }`. 미응답 필수 질문이 남으면 `409`이고 남은 질문 정보를 반환한다
+- `POST /clarification-sessions/{id}/freeze` — 검토 체인 승인이 완료된 내부 프로세스가 호출(고객 직접 호출 시 이미 승인 완료된 세션만 허용). 동결되면 RequirementSet(§5.25)이 생성되고 세션은 `frozen`이 된다
+- `GET /projects/{project_id}/requirements` — 프로젝트의 누적 요구사항 기록(버전별) 목록. 불변 기록은 수정 API를 제공하지 않는다
+- `GET /clients/user/{userId}/pending-sessions` — 해당 고객이 아직 답변하지 않은 `waiting_client` 세션 목록(웹 접속 시 확인하는 "질문 수신함"). MVP 알림은 이 목록 기반 표시다
+
+### Orchestration (§29)
+
+- `POST /requirements/{requirement_set_id}/trigger` — 동결된 RequirementSet에 대해 작업 분해(§29)를 개시. 명시적 트리거이지만 자동 트리거(동결 직후)도 폴백으로 존재
+- `GET /projects/{project_id}/orchestration` — 목표(EventStream 대신)의 현재 단계, 생성된 Epic/Story/Task 목록, 배정 현황 요약
+
 ### Workflows / Runs
 
 - `GET /workflow-runs`
@@ -1480,7 +1596,8 @@ API 변경은 OpenAPI 스키마와 계약 테스트를 함께 갱신한다. 오�
 장기 UI는 UI-001에서 `apps/web`(Next.js) 기반 CEO 대시보드로 구현한다(§18). 그 전 단계로, 현재 구현된 API를 브라우저에서 직접 사용할 수 있는 경량 웹 콘솔을 제공한다.
 
 - 위치: `backend/src/main/resources/static/`(index.html, app.js, style.css). Spring Boot가 `/`에서 정적으로 서빙하며, 별도 빌드 도구와 외부 의존성을 추가하지 않는다(검증 환경인 VM은 npm/이미지 pull 네트워크가 제한됨)
-- 범위: 현재 구현된 기능만 노출한다 — 기본 회사 템플릿 import, 직원 목록/직급 배정/평가 리포트, 직급 CRUD와 모델 풀, provider/profile 생성·목록, 프로젝트·업무 생성, 피드백 평가, 메시지, CEO Ask
+- 범위: 현재 구현된 기능만 노출한다 — 기본 회사 템플릿 import, 직원 목록/직급 배정/평가 리포트, 직급 CRUD와 모델 풀, provider/profile 생성·목록, 프로젝트·업무 생성, 피드백 평가, 메시지, CEO Ask. REQ-001 이후에는 **고객 골 입력 탭과 질문·응답(명확화 세션) 탭**을 추가한다(§28). 콘솔 위치는 고객(Client) 포지션 명칭을 따른다
+- 고객 접속 환경: 미응답 질문은 `waiting_client` 세션 큐에 쌓이며, 고객이 접속했을 때 대시보드에 미응답 세션이 상단에 강조된다. 웹에서 실시간 푸시 대신 접속 시 표시 방식을 기본으로 하고, 이후 앱 전환 시 푸시 알림이 확장된다(§28.5)
 - 인증: 기존 API와 동일하게 로컬 단일 사용자를 전제로 하며, 화면에서 organizationId/userId를 입력받아 localStorage에 보관한다. API 키·secret은 화면에 표시하지 않는다(secretRef 참조만 입력)
 - 모바일: 모바일 우선 반응형 레이아웃을 적용한다(좁은 화면에서는 하단 탭 내비게이션, 카드형 목록, 터치 친화 버튼)
 - 프로젝트/업무 목록 조회 API가 아직 없으므로, 콘솔은 생성한 프로젝트·업무를 localStorage에 기억해 표시한다. 서버 목록 API가 추가되면(§17 Projects/Tasks) 서버 조회로 대체한다
@@ -1489,58 +1606,30 @@ API 변경은 OpenAPI 스키마와 계약 테스트를 함께 갱신한다. 오�
 
 ## 18. 저장소 디렉터리 구조
 
-초기 모노레포 예시. 핵심 백엔드는 Java/Spring Boot Gradle 멀티모듈 프로젝트로 구성한다.
+현재 실제 구조(구현 기준): Maven 단일 모듈 Spring Boot 백엔드와 정적 콘솔, Compose 배포, QEMU VM 검증 환경.
 
 ```text
-ai-company/
-  apps/
-    web/                         # Next.js CEO console
+auto-company/
   backend/
-    settings.gradle.kts
-    build.gradle.kts
-    gradle/wrapper/              # Gradle Wrapper, version pinned
-    modules/
-      domain/                    # 순수 도메인 모델, enum, 불변식
-      application/               # 유스케이스, 트랜잭션 경계, port
-      infrastructure/            # JPA, Flyway, provider/Git/Docker client
-      api/                       # Spring MVC controllers, DTO, security
-      worker/                    # durable jobs, leases, retry/resume
-      model-adapters/             # provider implementations
-      agent-runtime/              # prompt/context/tool loop
-      tool-broker/                # permission-checked tools
-      workspace-runner-client/    # isolated Docker runner client
-      git-integration/            # branch/diff/PR adapters
-      quality-gates/              # test and review gates
-      knowledge/                  # docs indexing and retrieval
-      observability/              # logs, metrics, traces
-  configs/
-    default-company.yaml
-    model-routing.yaml
-    quality-policies.yaml
-  prompts/
-    roles/
-    workflows/
-    reviews/
+    pom.xml                       # Maven 단일 모듈 (버전 고정)
+    src/main/java/com/autocompany/
+      controller/                  # Spring MVC controllers, DTO
+      service/                     # 도메인 서비스(유스케이스, 트랜잭션 경계)
+      entity/                      # JPA 엔티티와 enum
+      repository/                  # Spring Data JPA
+      model/                       # ModelAdapter 계약과 불변 값 타입
+    src/main/resources/static/    # 초기 웹 콘솔 (정적, §17)
+    src/test/java/                # 단위/서비스/웹 계층 테스트
+  docker-compose.yml               # web + postgres
+  .env.example
   docs/
     DESIGN.md
-    architecture/
-    decisions/
-  tests/
-    contract/
-    e2e/
-    fixtures/
-  scripts/
-    dev.sh
-    backup.sh
-    restore.sh
-    preflight.sh
-  docker-compose.yml
-  .env.example
-  package.json                   # frontend tooling
+  qemu-test/                       # QEMU VM 기반 자동 검증 스크립트
   README.md
+  AGENTS.md
 ```
 
-Gradle 모듈은 실제 의존 관계를 `settings.gradle.kts`와 각 모듈의 `build.gradle.kts`에 선언한다. `domain`은 Spring, JPA, provider SDK에 의존하지 않으며, `application`은 port/interface에 의존하고 `infrastructure`가 이를 구현한다. 초기에는 API와 worker를 같은 저장소 및 배포 이미지에서 실행할 수 있지만, 별도 프로세스로 실행할 수 있도록 진입점과 설정을 분리한다.
+확장 목표 모노레포(장기): Next.js 콘솔(`apps/web`), 모듈 분리(domain/application/infrastructure/api), worker, workspace runner 클라이언트, 진입점·설정 분리 등은 안정화 이후점으로 유지한다. 초기에는 하나의 Spring Boot 프로세스에서 논리 모듈(§3.1)을 패키지 경계로 유지한다.
 
 Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브러리를 사용하는 선택적 worker를 추가한다면 별도 디렉터리와 별도 이미지로 두고, Java 백엔드의 안정된 API/메시지 계약을 통해 통신한다.
 
@@ -1551,7 +1640,7 @@ Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브�
 ### Phase 0 — 저장소 및 개발 기반
 
 구현:
-- Java/Spring Boot/Gradle Wrapper 버전 조합을 고정하고 toolchain을 선언
+- Java/Spring Boot/Maven 버전 조합을 고정하고 toolchain을 선언(실제 저장소는 Maven 기준)
 - Spring Boot 모듈형 모놀리스의 의존성 규칙과 패키지 경계 설정
 - 모노레포와 코드 스타일 설정
 - Docker Compose 기반 PostgreSQL/Redis/API/Web 실행
@@ -1612,6 +1701,33 @@ Python은 초기 필수 런타임이 아니다. 향후 Python 전용 라이브�
 - worker를 강제 종료한 뒤 작업을 복구할 수 있음
 - 최대 재시도 후 무한 루프 없이 종료됨
 - 중복 실행으로 같은 Task가 중복 완료되지 않음
+
+### Phase 3A — 요구사항 명확화 파이프라인 (REQ-001~003)
+
+구현:
+- ClarificationSession/ClarificationQuestion/RequirementSet 엔티티와 상태 전이
+- 골(Goal) 접수 API와 내부 협의 개설(Mock 모델 시뮬레이션; MODEL-002 전까지 모든 직원 응답은 mock 기반)
+- 질문 구성기: 기능별 개별 체크박스, 선택형, 기타 자유 텍스트, 세션 질문 수 한도
+- 역할 검토 체인(§28.4)과 병렬 실행(Freeze) 불변성
+- `waiting_client` 세션 큐와 고객 접속 시 미답변 세션 표시
+
+완료 조건:
+- 고객이 골을 제출하면 질문 세트가 검토 체인 통과 후 고객에게 표시됨
+- 고객이 오프라인이어도 세션이 큐에 유지되고 접속 시 확인 가능
+- 동결 이후 수정 시도가 모두 차단되고 감사 로그가 남음
+- 새 세션을 열어 이전 기록을 보존하며 진화함
+
+### Phase 3B — 자율 오케스트레이션 (ORCH-001~002)
+
+구현:
+- 동결된 RequirementSet → Epic/Story/Task 분해(Mock 모델 기반)
+- 직무/직급 `task_types` 기반 자동 배정
+- 재계획·에스컬레이션 규칙
+
+완료 조건:
+- 고객이 직원마다 직접 할당하지 않고 골만으로 작업 분해와 배정이 진행됨
+- 요구사항이 부족하면 새 명확화 세션이 열림
+- 모든 분해·배정 결정에 근거가 기록됨
 
 ### Phase 4 — Workspace 및 Git 통합
 
@@ -1883,6 +1999,17 @@ security:
   allow_unrestricted_network: false
   production_deploy_enabled: false
 
+clarification:
+  max_questions_per_session: 5
+  review_chain_roles: [PLANNER, ARCHITECT, QA_ENGINEER, SECURITY_DEVOPS, PROJECT_MANAGER]
+  allow_other_by_default: true
+  max_sessions_per_goal: 3
+  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note]
+
+orchestrator:
+  auto_assignment: true
+  replan_attempts_per_requirement_set: 2
+
 documents:
   require_evidence_refs: true
   mark_stale_on_code_change: true
@@ -1896,6 +2023,7 @@ documents:
 - `allow_paid_fallback: false`는 예상치 못한 비용을 방지한다. 사용자가 허용하기 전에는 대체 유료 모델을 호출하지 않는다.
 - `default_quality_tier`는 설치된 모델 프로필과 일치하도록 검증한다.
 - `default_grade_count`는 기본 템플릿이 만들 직급 수다. 직급별 가용 모델 풀이 비어 있으면 preflight에서 경고하고, 모델이 배정되지 않은 직급의 직원은 실행 전 사용 가능한 모델을 요구한다.
+- `clarification.review_chain_roles`의 순서는 검토 체인 정의(§28.4)와 동일하게 유지한다. 조직에 존재하지 않는 역할은 건너뛰고 감사 로그에 기록한다. `max_sessions_per_goal` 초과 시 세션 연속이 아닌 운영자 개입 기록을 남긴다.
 - 예산 기본값은 조직/프로젝트 생성 시 사용자가 확인하도록 하고, 무제한으로 설정하지 않는다.
 - 위 숫자는 설치 직후 안전하게 시험할 수 있도록 제안한 초기 템플릿이지, 모든 공급자의 무료 티어/가격을 보장하는 값은 아니다. 실제 적용 전 provider 가격과 조직의 의도한 지출 한도를 확인한다.
 - `paid_calls_enabled_by_default: false`인 초기 설치는 유료 provider 호출을 명시적으로 활성화하고 한도를 확인하기 전에는 유료 호출을 하지 않는다. 사용자가 유료 호출을 켠 뒤에는 직원별 기본 한도가 자동 적용된다.
@@ -1926,6 +2054,10 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 16. workspace 종료 시 정리되며 실패한 정리 작업이 탐지된다.
 17. API 키가 저장소, 프롬프트 로그, UI에 노출되지 않는다.
 18. backup/restore 절차를 검증할 수 있다.
+19. 고객이 단일 프롬프트(골)를 제출하면 직원들이 협의해 구조화된 질문(기능별 개별 체크박스 + 기타 자유 텍스트)을 만들어 고객에게 전달한다. 고객이 없어도 세션은 큐에 유지된다(§28).
+20. 고객 답변 수집 후 세션이 동결되고 불변 RequirementSet이 생성된다. 이후 수정 시도가 409로 차단되며, 새 요구사항은 새 세션으로 진화한다.
+21. 동결된 요구사항만을 근거로 작업 분해와 자동 배정이 진행되고(MVP는 Mock 모델 시뮬레이션), 고객은 직원별 할당을 직접 하지 않는다(§29).
+22. 고객에게 내부 기술 질문(프레임워크/DB 선택 등)이 전달되지 않는다. 기술 결정은 내부 Decision 기록으로만 남는다.
 
 ---
 
@@ -1949,6 +2081,12 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 16. **로컬 우선이지만 환경 capability를 명시**해 OS/VM/GPU가 없을 때 가능한 척하지 않는다.
 17. **초기 기본 템플릿은 안전하고 작동 가능한 출발점**으로 제공하며, 실제 비용/품질 측정으로 개선한다.
 18. **직급과 직급별 가용 모델은 사용자가 구성**한다. 직원은 개별 모델이 아니라 직급을 가지며, 직급 수를 늘리거나 줄일 수 있다.
+19. **사용자는 외주 고객(Client) 포지션**이다. 고객에게는 요구사항만 묻고, 기술 결정은 내부 회의/Decision으로 처리한다(§28.2).
+20. **고객 질문은 구조화 포맷(기능별 개별 체크박스, 선택형) + 기타 자유 텍스트**를 기본으로 하며, 세션당 질문 수 상한(`max_questions`)을 둔다. 자유 텍스트는 선택지 누락·오류 시 고객이 직접 의견을 넣을 창구다(§28.3).
+21. **질문 세션은 별도 관리 단위**다. `open → waiting_client → review → frozen` 상태로 관리하고, 고객 오프라인 여부와 무관하게 큐에 유지된다(§28.5).
+22. **동결된 요구사항 기록은 불변**이다. 이후 수정은 새 세션·새 기록 버전으로만 진화한다(§28.6).
+23. **자율 오케스트레이션은 동결된 요구만 근거로** 작업 분해·배정을 수행하며, 고객이 직원마다 직접 할당하지 않는다(§29).
+24. **고객 자발적 전문 요구사항은 제약으로 수용**한다. goal_text·답변 기타 텍스트·`client_extra_note`에서 수집한 내용은 `source=client_declared`로 기록하고, 해당 영역의 질문은 면제 또는 간략화한다. 안전·법률·품질 바닥선과 충돌하는 표시 요구는 임의로 판단하지 않고 제품 수준 후속 질문으로 확인한다(§28.2).
 
 ---
 
@@ -1961,29 +2099,36 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 3. `PLAT-003`: Spring Boot Actuator health/readiness 및 설정 검증
 4. `PLAT-004`: PostgreSQL 도메인 매핑과 Flyway migration
 5. `PLAT-005`: 사용자/조직 CRUD 및 최초 관리자 설정
-6. `ORG-001`: Employee/Team/직무/직급(JobGrade) 도메인 모델, 직원 직급 배정, 직급 CRUD(추가·삭제·순서·책임·담당 업무 유형)
-7. `ORG-002`: 직급별 가용 모델 풀(GradeModel) 설정과 기본 회사 템플릿 import (기본 5단계 직급 포함)
-8. `AUD-001`: AuditEvent middleware/service
-9. `MODEL-001`: ModelAdapter 인터페이스와 MockProvider
-10. `MODEL-002`: 첫 실제 provider adapter 및 health check
-11. `MODEL-003`: ModelProfile/직급별 가용 모델 풀(GradeModel)과 비용 원장
-12. `TASK-001`: Task 상태 머신과 상태 전이 테스트
-13. `WF-001`: worker lease, retry, pause/resume
-14. `AGENT-001`: Agent Runtime의 context builder와 structured output
-15. `TOOL-001`: Tool Broker와 권한 정책
-16. `WS-001`: Docker workspace lifecycle
-17. `GIT-001`: branch/worktree/diff 도구
-18. `QA-001`: command template 및 TestRun
-19. `PR-001`: 내부 PR/Review 모델과 자기 승인 방지
-20. `DOC-001`: Artifact/Document revision 및 검색
-21. `UI-001`: CEO 대시보드와 작업 타임라인
-22. `E2E-001`: 버그 수정 Task의 전체 E2E 시나리오
-23. `OPS-001`: backup/restore 및 preflight
-24. `COST-001`: 예산 경고와 quota wait/resume
-25. `COST-002`: BudgetPolicy의 직원/모델/기간별 복수 한도와 설정 UI
-26. `COST-003`: 원자적 UsageReservation reserve/settle 및 동시 실행 경쟁 조건 테스트
-27. `COST-004`: rolling 5시간 토큰, 달력 월 비용, 일일 요청 수 집계 및 초기화 테스트
-28. `COST-005`: 한도 경고, 일회성 grant 승인, rolling window 회복 후 작업 재개
+6. `ORG-001`: Employee/Team/직무/직급(JobGrade) 도메인 모델, 직원 직급 배정, 직급 CRUD(추가·삭제·순서·책임·담당 업무 유형) — **완료**
+7. `ORG-002`: 직급별 가용 모델 풀(GradeModel) 설정과 기본 회사 템플릿 import (기본 5단계 직급 포함) — **완료**
+8. `PLAT-004`: PostgreSQL 도메인 매핑과 Flyway migration
+9. `MODEL-001`: ModelAdapter 인터페이스와 MockProvider — **완료**
+10. `REQ-001`: ClarificationSession 도메인 모델(§5.23)과 골(Goal) 접수 API
+11. `REQ-002`: 질문 구성기(QuestionComposer)와 구조화 질문 스키마(기능별 개별 체크박스, 기타 자유 텍스트)
+12. `REQ-003`: 역할 검토 체인(§28.4)과 동결(Freeze)+불변성 검증
+13. `ORCH-001`: 동결된 요구 → Epic/Story/Task 분해 (Mock 모델 기반)
+14. `ORCH-002`: 자동 배정 정책(직무/직급 task_types 매칭)과 재계획
+15. `AUD-001`: AuditEvent middleware/service
+16. `MODEL-002`: 첫 실제 provider adapter 및 health check
+17. `MODEL-003`: ModelProfile/직급별 가용 모델 풀(GradeModel)과 비용 원장
+18. `TASK-001`: Task 상태 머신과 상태 전이 테스트
+19. `WF-001`: worker lease, retry, pause/resume
+20. `AGENT-001`: Agent Runtime의 context builder와 structured output
+21. `TOOL-001`: Tool Broker와 권한 정책
+22. `WS-001`: Docker workspace lifecycle
+23. `GIT-001`: branch/worktree/diff 도구
+24. `QA-001`: command template 및 TestRun
+25. `PR-001`: 내부 PR/Review 모델과 자기 승인 방지
+26. `DOC-001`: Artifact/Document revision 및 검색
+27. `UI-001`: 고객 대시보드와 작업 타임라인 (Next.js)
+28. `UI-002`: 콘솔 요구사항 세션 탭(질문 응답 UI)과 골 입력 탭
+29. `E2E-001`: 골 제출→명확화→동결→분해→배정 목 시나리오
+30. `OPS-001`: backup/restore 및 preflight
+31. `COST-001`: 예산 경고와 quota wait/resume
+32. `COST-002`: BudgetPolicy의 직원/모델/기간별 복수 한도와 설정 UI
+33. `COST-003`: 원자적 UsageReservation reserve/settle 및 동시 실행 경쟁 조건 테스트
+34. `COST-004`: rolling 5시간 토큰, 달력 월 비용, 일일 요청 수 집계 및 초기화 테스트
+35. `COST-005`: 한도 경고, 일회성 grant 승인, rolling window 회복 후 작업 재개
 
 각 티켓에는 `acceptance_criteria`, 의존 Task, 테스트 계획, 담당자, 리뷰어를 반드시 지정한다. AI가 티켓을 구현할 때에도 이 기준을 동일하게 적용한다.
 
@@ -2012,4 +2157,166 @@ MVP는 아래 항목을 모두 충족해야 “실제 프로젝트에 사용 가
 
 이 구조를 따르면 로컬 환경에서 시작해 다른 PC나 자체 서버로 옮길 수 있고, 나중에 VM 실행기나 분산 worker를 추가해도 핵심 도메인 모델을 유지할 수 있다.
 
-가장 먼저 완성해야 할 수직 기능(vertical slice)은 **“CEO가 Task를 만들면, AI 직원이 격리된 Docker 환경에서 실제 코드를 수정하고 테스트를 실행해 PR을 제출하며, 다른 직원이 리뷰하고 모든 실행·비용·근거가 기록되는 것”**이다. 이 흐름이 안정적으로 작동한 뒤에 회의, 성과 평가, 자율 유지보수 기능을 추가한다.
+가장 먼저 완성해야 할 수직 기능(vertical slice)은 **“고객이 단일 프롬프트로 요구사항을 말하면, AI 직원들이 내부 협의 후 최소한의 구조화된 질문을 통해 요구사항을 확정하고, 이를 불변 기록으로 동결한 뒤, 스스로 작업을 분해·배정해 격리된 Docker 환경에서 구현하고 테스트와 리뷰를 거쳐 고객에게 결과 리포트를 전달하는 것”**이다. 이 흐름이 안정적으로 작동한 뒤에 회의, 성과 평가, 자율 유지보수 기능을 확장한다.
+
+---
+
+## 28. 요구사항 명확화 파이프라인 (Requirement Engineering)
+
+### 28.1 배경과 포지션
+
+사용자는 CEO가 아니라 **외주 고객(Client)**이다. 고객은 "블로그 사이트 만들어줘" 같은 단일 프롬프트로 요청한다. 기획·설계·구현·검증 방법은 직원들의 내부 협의로 정하며, 고객에게 묻는 것은 **제품 요구사항 불확실성**뿐이다.
+
+핵심 문제는 고객이 즉시 온라인 상태가 아닐 수 있다는 점이다. 웹 콘솔은 실시간 푸시가 어렵고, 잦은 알림은 고객 경험을 해친다. 따라서:
+
+1.직원들 사이 협의로 스스로 검토할 수 있는 것 내에서 최대한 진행한다.
+2. 반드시 고객 입력이 필요한 지점을 **최소한의 구조화된 질문**으로 추린다.
+3. 질문은 세션 큐에 쌓이고, 고객이 접속했을 때 콘솔에서 확인해 답변한다.
+4. 고객은 언제든 응답할 수 있으며, 그때까지 직원들은 고객이 필요로 하는 준비(요구사항 이해, 기술 비교, 진행 계획 등)로 직원들이 다음 요구사항에 대비한다.
+
+### 28.2 고객 질문의 경계
+
+고객에게 포함되는 질문:
+- 제품의 기능 목록 (이 기능이 필요한가?)
+- 품질·완성도 기준 (간단한 MVP로 먼저 볼 것인가? 완성품을 원하는가?)
+- 우선순위 (어떤 기능이 먼저 인가?)
+- 제약사항 (기한, 비용, 특별히 지켜야 하는 규칙)
+- 외부 연동이 필요한 대상 (이 서비스에 있는 계정? 외부 서비스 연동?)
+
+고객에게 포함되지 않는 질문:
+- 기술 스택 (DB, 프레임워크, 라이브러리 등)
+- 아키텍처 방식 (마이크로서비스 여부, SPA 여부 등)
+- 구현 방법과 검증 방법
+- 내부 팀 사정 (모델 선택, 예산, 직원 배정 등)
+
+**"묻지 않는다"는 "받지 않는다"가 아니다** — 고객 자발적 전문 요구사항 수용:
+
+위 경계는 고객에게 *먼저* 질문하지 않는다는 원칙이지, 고객이 제시한 전문적 내용을 거부한다는 뜻이 아니다.
+
+1. **전문성 신호 판정**: 고객의 골 텍스트(goal_text)나 답변에 전문적 내용이 있으면(예: "Spring Boot + PostgreSQL로 만들어줘", "개인정보 암호화 필수 배치", "S3 대신 로컬 스토리지만"), 직원들 협의에서 해당 영역의 고객 신호라 판단하고 기록한다. 신호는 통째로 "전문가 고객" 단정이 아니라 **주제별 신호**(기술 스택에 지식 있음, 보안에 관심 있음 등)로 세분 기록한다.
+2. **제약으로 수용**: 신호의 구체적 내용은 명시적 제약(`RequirementSet` 항목에 `source=client_declared`)으로 기록한다. 직원들은 이를 암묵적으로 재평가해 무시하지 않는다. 이미 고객이 결정을 제시한 영역에 같은 내용을 되묻지 않는다(면제), 필요하면 더 좁은 후속 질문으로만 확인한다.
+3. **충돌 시 침묵 금지**: 고객 제시 요구가 안전·법률·품질 바닥선과 충돌하거나 서로 모순되면 직원들이 임의로 판단해 진행하지 않는다. 충돌 본문을 제품 수준으로 서술한 후속 질문 하나(검토 체인 통과)로 고객 확인을 받는다. 이때도 기술 대안을 강요하는 형태가 아니라 제품 결과의 차이(위험·일정·성능)를 설명하는 형태로 작성한다.
+4. **항상 열려 있는 기입란**: `waiting_client` 상태의 모든 세션에는 "전문적인 요구사항이 있으면 추가로 작성해주세요"라는 안내 문구와 자유 입력란을 고정 표시한다(`ClarificationSession.client_extra_note`, §5.23). 고객이 전문 요구를 언제든 끼워 넣을 수 있어야 한다.
+5. **신호의 원천**: `goal_text`(원문), 고객 답변의 기타 자유 텍스트, `client_extra_note` 세 곳에서 수집하며, 모두 `source=client_declared`로 일관되게 기록한다.
+
+### 28.3 질문 포맷: 최소 질문으로 최대 의도
+
+중요한 원칙: **하나의 질문은 가능한 한 다양한 응답을 한 번에 얻을 수 있게 구성**하되, 세션당 질문 수는 `max_questions`(기본 5)로 상한을 둔다. 질문 하나에 서로 다른 정보를 담지 않도록 분리한다.
+
+예시 — "블로그 사이트 만들어줘"에 대한 이상적인 질문 세트:
+
+```
+질문 1 (single_choice): 어느 정도 수준에서 시작하고 싶으신가요?
+ - (a) 먼저 간단한 MVP로 시작해보고 싶다 (로그인/글쓰기 등 핵심만)
+ - (b) 실제 서비스 가능한 완성품으로 한 번에 만들고 싶다
+ - (c) 기타 — 직접 적어주세요 (텍스트 필드)
+
+질문 2 (multi_choice): 원하는 블로그 기능을 모두 선택해주세요. (각 기능은 개별 체크박스)
+ - [ ] 회원가입/로그인
+ - [ ] 글쓰기 (마크다운 지원 여부는 별도 질문)
+ - [ ] 글 수정/삭제
+ - [ ] 댓글
+ - [ ] 좋아요/이모지 반응
+ - [ ] 사진 업로드
+ - [ ] 동영상 임베드/업로드
+ - [ ] 비밀글/암호화 보관
+ - [ ] 이웃(구독)/팔로우
+ - [ ] 검색
+ - [ ] 기타 — 직접 적어주세요
+```
+
+기타(Other) 항목은 기본적으로 **항상 제공**한다(§5.24 `allow_other`). 선택지가 잘못 만들어졌거나 고객이 원하는 기능이 누락되었을 때 이용자가 직접 텍스트로 의견을 넣을 수 있어야 한다. 이것이 v1.3→v1.4 개정의 핵심 동기 중 하나다.
+
+추가로, 질문 세트와 별개로 세션 하단에는 항상 다음 고정 항목이 함께 표시된다:
+
+```
+전문적인 요구사항이 있으면 추가로 작성해주세요.
+(예: 특정 기술 강제, 보안/개인정보 규정, 성능 요건, 금지사항 등 — 없으면 비워도 됩니다)
+[ 자유 입력란 ]
+```
+
+이 고정 입력란(`client_extra_note`)에 내용이 작성되면 직원들 협의에서 전문성 신호로 분류되고, 구체 내용은 `source=client_declared` 제약으로 기록한다(§28.2). 비워 둔 것은 아무 효과가 없다.
+
+### 28.4 검토 체인 (Grade Review Chain)
+
+고객 질문이 곧바로 고객에게 가지 않는다. 생성된 질문은 직원들 사이 **역할 검토 체인**을 통과해야 `waiting_client` 상태로 간다. 분기 이력은 `ClarificationQuestion.reviewed_by_employee_ids`에 남는다.
+
+체인의 첫 단계는 질문 작성 이전에 수행한다:
+
+```
+[0단계: 고객 전문성 신호 선식별]
+  goal_text + client_extra_note + 기타 자유 텍스트에서 전문적 내용을 분류한다.
+  이미 고객이 결정·제약을 제시한 영역은 질문 대상에서 빼거나 간략화하고,
+  그 사유(면제/간략화, 근거 문장)를 협의 기록으로 남긴다.
+  남은 불확실 영역만 질문 대상이 된다.
+
+[질문 관련 주제 파악] → [PLANNER/L4 (프로젝트 리드) 최초 작성]
+   → [ARCHITECT/L5] — "이 질문의 응답이 이후 작업의 범위·복잡도로 이어지는가? 기술적 성격이 너무 크게 노출되지 않는가?"
+   → [QA ENGINEER/L3] — "답변이 인수 조건으로 전환될 수 있는가? 모호한 답변이 나오지 않게 했는가?"
+   → [SECURITY_DEVOPS/L3] — "개인정보 처리·암호화·관제 이슈가 개입되는가?" (해당 시에만)
+   → [PM 또는 기술문서/L2~L4] — "고객이 문장으로 쉽게 이해하는가? 전문 용어는 노출되지 않았는가?"
+        → 통과 시 `waiting_client` 전송
+```
+
+체인을 통과하지 못한 질문은 다시 협의 회의(§13)로 돌아가 수정된다. 체인 순서는 구현에서 상수로 정의하고, 프로젝트 템플릿 직무 구성(§6.1)에 따라 존재하지 않는 역할은 건너뛴다(감사 로그에 건너뛴 이유 기록).
+
+고객 제시 전문 요구가 안전·법률·품질 바닥선과 충돌하는 경우(§28.2 규칙 3)도 검토 체인에서 처리한다: 임의 진행 없이 충돌을 제품 수준 문구로 담은 후속 질문을 새로 만들어 같은 체인에 통과시킨다.
+
+### 28.5 오프라인 고객 지원 및 질문 세션 관리
+
+- 세션은 Open 대기(직원 협의) → `waiting_client`(질문 발송) → 세션 검토(고객 응답 반영) → 동결(Freeze) 순으로 관리(§5.23)
+- 고객이 웹에 접속하면 `waiting_client` 세션이 목록 상단에 나타나고, `GET /clients/user/{userId}/pending-sessions`로도 조회 가능하다(§17)
+- MVP 푸시 알림은 제공하지 않는다. 이후 앱 전환 시 푸시 알림이 추가되며, 질문을 반복 푸시하지 않도록 만료·요약 규칙을 함께 도입한다
+- 고객이 장기간 무응답이면 각 질문의 `assumption_if_skipped`를 기준으로 진행할지, 기다릴지를 검토 체인이 판단하고 그 근거를 기록한다. 고객의 원 요구사항은 원문(goal_text)으로 보존되므로, 이후 고객이 접속해 정정 요청하면 새 세션을 열어 대응한다
+
+### 28.6 동결(Freeze)과 불변성
+
+세션 동결 시점:
+- 고객이 모든 필수 질문에 답변 완료하고, 직원 검토 체인이 요구사항 기록을 승인했을 때
+- 고객이 명시적으로 "이 정도면 진행해라"이라고 지시했을 때
+
+동결 즉시 ClarificationSession은 `frozen` 상태가 되고, RequirementSet(§5.25)이 생성돼 불변 기록으로 남는다. 그 이후:
+- 세션의 질문·답변·요구사항 기록을 어떤 API로도 수정할 수 없다(수정 시도는 409 + AuditEvent)
+- 기획 이슈나 고객 요구 변경은 **새 세션**(session_number +1)으로만 진화한다
+- 이전 세션의 반영된 요구사항에서 "기존과 다르게"이면 새 RequirementSet 버전이 추가되고 이전 버전이 `superseded`가 된다. 기록된 진화 과정은 감사와 회귀 분석에 사용한다
+
+---
+
+## 29. 자율 오케스트레이션 (Goal → Task 분해 → 실행)
+
+### 29.1 원칙
+
+- CEO/고객이 직원마다 직접 업무를 하나씩 할당하지 않는다. 직원들이 협의된 작업 분해와 배정을 플랫폼의 Orchestrator가 실행한다
+- 분해·배정의 근거는 동결된 RequirementSet(§5.25)이다. 근거 없는 새 기능 작업의 자체 생성은 없다
+- 제한은 계속 유지된다: 최대 라운드, 예산, 실행 시간, 최대 재시도, 실행 환경 격리, 주요 승인(merge/deploy)은 여전한 §13/§16/§21 정책을 따른다
+
+### 29.2 사이클
+
+```
+[고객 골 접수]
+   → [ClarificationSession 진행 · 동결] (§28)
+   → [Operation lead (PLANNER)에 의한 작업 분석]
+   → [작업 분해: Epic/Story/Task 트리 + 의존성]
+        - 구현: 기존 Task 엔티티 재사용(parent_task_id, TaskDependency)
+        - 인수 조건은 RequirementSet의 항목 참조
+   → [배정: 직원 역할/직급을 대상으로 자동 매칭]
+   → [실행: 각 Task는 기존 AgentRun 기반으로 수행]
+   → [분석·검토: 품질 게이트와 리뷰 루프 (§12, §10.2)]
+   → [확정: 결과 요약과 산출물 위험 평가를 고객에 리포트]
+   → (요구사항 반영 불가 또는 새 소요사항 발견 시 → 새 ClarificationSession 개시)
+```
+
+### 29.3 배정 정책
+
+- Task의 직무(TaskType)와 기술 선택은 직급별 `task_types`와 필요 능력을 우선 기준으로 배정한다
+- 배정이 실패하면 `BLOCKED`가 되고 사용자 요청이 필요한 사유가 기록된다
+- 배정 이력은 WorkflowRun에 기록되고, 이후 조직 변경(직급 재편, 직원 수 변동)에 영향을 분석할 수 있게 한다
+
+### 29.4 상태 요약
+
+Orchestrator 사이클은 지속적으로 상태를 보고한다:
+- 고객 응답 대기 (`waiting_client`)
+- 작업 분해 완료, 실행 중 Task 요약 (코드 상세 아닌 **제품 요약** 관점)
+- 블로커/새 요구사항 필요
+
+모든 상태 보고는 `GET /projects/{id}/orchestration`(§17)에서 확인 가능하다.
