@@ -988,6 +988,17 @@ public interface ModelAdapter {
 
 도메인 코드가 특정 벤더 SDK를 직접 호출하지 않게 한다. `ModelRequest`에는 메시지, 도구 스키마, 출력 형식, timeout, token budget, trace ID가 포함된다. `ModelResponse`에는 결과, tool calls, 사용량, 종료 이유, provider request ID, latency가 포함된다.
 
+값 타입(불변 record, `com.autocompany.model`):
+
+- `ModelDescriptor`: `modelId`, `displayName`, `capabilities`, `contextWindow`, `maxOutputTokens`, `supportsToolCalling`, `supportsJsonSchema`. `listModels()` 결과로 provider가 제공하는 모델 목록을 나타낸다
+- `ModelRequest`: `modelId`, `messages`(`ChatMessage`: role/content), `tools`(`ToolSpec`: name/description/parametersJsonSchema), `outputJsonSchema`, `timeout`, `maxOutputTokens`, `traceId`
+- `ModelResponse`: `modelId`, `content`, `toolCalls`(`ToolCall`: id/name/argumentsJson), `usage`, `finishReason`(`STOP|LENGTH|TOOL_CALLS|CONTENT_FILTER|ERROR`), `providerRequestId`, `latencyMs`
+- `Usage`: `inputTokens`, `outputTokens`, `totalTokens`(=입력+출력), `estimated`(추정값 여부, §16), `raw`(provider 원본 usage 보존)
+- `ProviderHealth`: `status`(`ModelProvider.HealthStatus` 재사용), `message`, `latencyMs`, `checkedAt`
+- `CostEstimate`: `estimatedInputTokens`, `estimatedOutputTokens`, `estimatedCost`, `currency`, `estimated`(추정값 여부)
+
+**MockModelAdapter (MODEL-001)**: 테스트·개발용 어댑터. 고정 응답 큐, 인위적 지연, 실패 모드, health 상태를 설정할 수 있다. 토큰 수와 비용은 mock 추정치이므로 `estimated=true`로 표시한다. 실제 provider 어댑터는 MODEL-002에서 추가한다.
+
 ### 9.2 라우팅 점수
 
 초기에는 복잡한 ML 최적화보다 설명 가능한 규칙 기반 라우터를 사용한다.
