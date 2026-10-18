@@ -1,11 +1,11 @@
 # 🤖 AutoCompany (AI 가상 회사 시스템)
 
-**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.3)
+**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.6.1)
 
 ## 구현 상태
 
 ### ✅ 구현 완료
-- **설계 문서**: `docs/DESIGN.md` (Section 1~7 전체)
+- **설계 문서**: `docs/DESIGN.md` (v1.6.1, Section 0~30)
 - **Java Spring Boot 백엔드**: `backend/` (Entity, Repository, Service, Controller, Config)
 - **테스트 코드**: `backend/src/test/`
 - **QEMU 환경**: `qemu-test/` (`arm64.qcow2` init 스냅샷, Java 21, Ubuntu 26.04 ARM64)
@@ -26,6 +26,7 @@
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합
 - Git 기반 협업 (`docs/DESIGN.md` Section 4 구조)
+- DB 스키마 마이그레이션 (Flyway — `backend/src/main/resources/db/migration/V1__baseline.sql`), 운영 DB는 `ddl-auto: validate` + 기존 DB는 `baseline-on-migrate`
 
 ### 📋 사용법 (현재 구현 기준)
 ```bash
