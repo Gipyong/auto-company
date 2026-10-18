@@ -19,6 +19,7 @@
   <button class="tab" data-tab="employees">직원</button>
   <button class="tab" data-tab="grades">직급</button>
   <button class="tab" data-tab="models">모델</button>
+  <button class="tab" data-tab="goal">고객 골 <span id="goalTabBadge" class="tab-badge" hidden>0</span></button>
   <button class="tab" data-tab="work">업무</button>
 </nav>
 
@@ -180,6 +181,56 @@
       <button id="btnProfSave" class="btn primary">Profile 추가</button>
     </div>
     <div class="list" id="profileList"></div>
+  </section>
+
+  <!-- ===== 고객 골 (§28 명확화 파이프라인) ===== -->
+  <section class="tabpage" id="tab-goal">
+    <div class="card">
+      <div class="row between">
+        <h2>세션 수신함 <span class="badge hot" id="inboxCount" hidden>0</span></h2>
+        <button id="btnInboxRefresh" class="btn ghost small">새로고침</button>
+      </div>
+      <p class="hint">응답 대기(WAITING_CLIENT) 세션이 위에 강조됩니다. 내용을 누르면 상세에서 질문에 답할 수 있습니다.</p>
+      <div class="list" id="pendingSessions"></div>
+    </div>
+
+    <div class="card">
+      <h2>골(Goal) 접수</h2>
+      <p class="hint">텍스트와 첨부 중 최소 한 가지는 필요합니다(§28.7-1). 예: 회원가입·로그인 등 기능 목록 기술.</p>
+      <label for="goalProject">프로젝트</label>
+      <select id="goalProject"></select>
+      <label for="goalText">골 텍스트 (첨부 단독 접수 시 비워도 됩니다)</label>
+      <textarea id="goalText" rows="3"></textarea>
+      <label for="goalFiles">첨부 파일 (text 기반 md·txt·csv·json은 내용 파싱, 그 외 형식은 원본 보존) — 최대 10개·파일당 50MB</label>
+      <input id="goalFiles" type="file" multiple>
+      <div id="goalFileList" class="chips"></div>
+      <button id="btnGoalSubmit" class="btn primary">골 제출</button>
+      <div id="goalResult" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>세션 탐색</h2>
+      <div class="row">
+        <select id="sessionProject"></select>
+        <button id="btnSessionLoad" class="btn primary">세션 불러오기</button>
+      </div>
+      <div class="list" id="sessionList"></div>
+
+      <div id="sessionDetail" hidden>
+        <div class="row between">
+          <h3 id="sessionDetailTitle">세션</h3>
+          <button id="btnSessionClose" class="btn ghost small">닫기</button>
+        </div>
+        <div id="sessionDetailBody"></div>
+        <div class="row">
+          <button id="btnCompose" class="btn primary">질문 구성</button>
+          <button id="btnSubmitAnswers" class="btn primary" hidden>답변 제출</button>
+          <button id="btnFreeze" class="btn danger" hidden>요구사항 동결</button>
+        </div>
+        <div id="questionsBox" class="list"></div>
+        <div id="reqBox"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ===== 업무 ===== -->

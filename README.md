@@ -26,6 +26,7 @@
 - 클라리피케이션 질문·답변 (REQ-002 — 질문 구성 `POST /clarification-sessions/{id}/questions`(개별 체크박스·기타·max_questions 상한, 0단계 전문성 신호 선식별 기록), 질문 조회 `GET .../questions`, 구조화 답변 `POST .../answers`(유형별 검증·skipped, 필수 미답 409+남은 질문, 전체 답변 시 review 전환))
 - 검토 체인·동결·요구사항 기록 (REQ-003 — 검토 체인 통과 후에만 질문 공개(open에서 재확인), 동결 `POST /clarification-sessions/{id}/freeze`(REVIEW만 가능, frozen 재동결 409 — 변경은 새 세션 REQ-005), RequirementSet v1 기록 생성(기능/비기능/제약/제외/리스크 + 항목 source 태깅 client_declared/client_answered/employee_derived), 누적 기록 `GET /projects/{id}/requirements`(버전 내림차순, 이전 FROZEN은 superseded 보존))
 - 다중 모달 골 접수 (REQ-004 — `POST /api/v1/projects/{id}/goal`에 `attachments`(filename·mediaType·contentBase64) 허용, 텍스트·첨부 둘 다 비면 400, 한도 10개/50MB 초과 400, 첨부는 Artifact(§5.19) 저장 + 원본 보존 + 파싱 상태 `PARSED|UNSUPPORTED|IMAGE_PENDING_VISION`(native md/txt/csv/json은 UTF-8 자체 파싱, pdf/xlsx/pptx/docx/hwp·기타는 원본 보존+`UNSUPPORTED`, 이미지는 vision 모델 배정 전 `IMAGE_PENDING_VISION`), `ClarificationSession.attachments` 참조 스냅샷, 파싱 불가 첨부는 "텍스트 보강" 후속 질문 항상 추가, 파싱된 첨부 텍스트는 0단계 신호 선식별+동결 기록 근거(`첨부 {파일명} 파일`)에 합류)
+- 웹 콘솔 명확화 UI (UI-002 — "고객 골" 탭: 세션 수신함(WAITING_CLIENT 상단 강조+탭 배지)·골 접수(텍스트+첨부 파일→base64 인코딩 제출)·세션 탐색(질문 폼: 단일/복수 선택·기타 직접 입력·단답·자유 서술·수치·건너뛰기, 답변 제출 후 동결 버튼, 동결 시 5그룹 요구사항+근거·가정 표시))
 - 토론 (`POST /api/v1/messages`)
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합

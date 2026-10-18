@@ -481,7 +481,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask. REQ 이후 **골 입력 탭(텍스트+첨부 업로드)+명확화 세션 탭(개별 체크박스·기타 자유 텍스트·사용자 세션 개설·취소)+직원 지시 편집(EMP-001 이후)** 추가, 세션 큐가 대시보드 상단 강조. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)**. 미구현: 사용자 세션 개설·취소(REQ-005), 직원 지시 편집(EMP-001 이후). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 
