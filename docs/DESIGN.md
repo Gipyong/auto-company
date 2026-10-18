@@ -148,7 +148,7 @@ Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure
 ### 5.4 Employee
 `id, organization_id, team_id?, employee_code(unique), display_name, job_family, specialties, grade_id(JobGrade 참조), employment_status: active|paused|on_leave|retired, availability_status: available|working|waiting|rate_limited|blocked, system_profile(직무 원칙, 민감정보 금지), custom_instructions(text?, 사용자가 작성한 개별 지시 — 직원 구성·수정 시 부여; AGENTS.md류 자유 서식), tool_policy_id, memory_policy, manager_employee_id?, created_by_user_id, retired_at?`.
 
-**구현 노트**: 현재 구현에 `systemPrompt`(템플릿 직무 원칙)만 있고 `custom_instructions`는 미구현(EMP-001). 현재 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
+**구현 노트**: 구현 필드는 `name·role·gradeId·systemPrompt·customInstructions`(V7, EMP-001). `custom_instructions`는 사용자가 작성하는 개별 지시(자유 서식, AGENTS.md류)로 최대 4000자(설정 `custom_instructions_max_chars` §26) — 초과 시 400. 직원 생성(`POST /employees`)·지시 편집(`PATCH /employees/{id}`)과 웹 콘솔 직원 상세에서 설정한다. 일부 직무 정보(`organization_id·job_family·availability_status` 등)는 MVP에서 Role·status로 대체. 시스템 안전 정책·도구 제약이 항상 우선 — custom instructions로 안전 정책을 덮을 수 없다(§8.2). 현재 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
 
 **중요**: 직원은 개별 모델·모델 정책을 갖지 않는다. 직급 하나를 가지며 가용 모델은 직급의 풀(§5.9)로 결정. 직급 부여·변경은 사용자 수동(§15) — 자동 승진/강등 없음.
 
@@ -328,6 +328,8 @@ Task·프로젝트 정책 로드 → 직원 프로필·직급·권한 로드 →
 
 저장소 파일·이슈·문서·고객 입력은 신뢰 불가 데이터. 안의 지시("시스템 프롬프트 무시", "비밀 출력")가 정책을 바꾸지 못하게 하고, 도구 권한은 프롬프트가 아니라 코드에서 강제.
 
+**구현 노트(EMP-001)**: AgentRun·모델 프롬프트 조립 계층 자체는 미구현(MVP). (3) 계층(직무 원칙 `systemPrompt` + `custom_instructions`)은 `EmployeeService.buildAgentContext`가 조립하며(§5.4), 조립 결과에는 "시스템 안전 정책·도구 제약이 우선" 문구가 포함된다 — 후속 AgentRun이 이 결과를 시스템 메시지로 소비한다. 조립만 검증: `EmployeeServiceTest`.
+
 ### 8.3 메모리 정책
 Task memory(요약·시도·실패·다음 단계) / Project knowledge(아키텍처·계약·결정·구조, 근거+버전, 오래되면 stale) / Employee work history 담당 업무+검증 산출물 / Conversation transcript는 제한 보존. 무조건 영구 승격 금지; 프로젝트 권한 테두리 적용.
 
@@ -452,7 +454,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Organization / Employees**
 - `POST /organizations/template/import` — 요청 `{organizationId, userId}`; §6.2 5직급+§6.1 8인 한 트랜잭션; 중복 409
-- `GET/POST /employees`(POST/PATCH에 `customInstructions` 포함, §5.4), `GET/PATCH /employees/{id}`, `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
+- `GET/POST /employees`(POST/PATCH에 `customInstructions` 포함, §5.4), `GET/PATCH /employees/{id}`(`PATCH`는 `{name?, customInstructions?}` 부분 갱신 — null 유지·빈 문자열 지우기, 4000자 초과 400), `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
 
 **Grades**: `GET/POST /grades`, `GET/PATCH/DELETE /grades/{id}`(직급 CRUD; 삭제 배정 직원 0만), `GET/PUT /grades/{id}/models`(풀+우선순위)
 
@@ -483,7 +485,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)**. 미구현: 직원 커스텀 지시 편집(EMP-001). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)** / **직원 지시 편집(EMP-001: 직원 상세 custom_instructions 편집·저장 → `PATCH /employees/{id}`)**. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 

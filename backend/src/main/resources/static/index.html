@@ -62,6 +62,13 @@
         <button id="btnAssignGrade" class="btn primary">직급 배정</button>
         <button id="btnLoadEvals" class="btn ghost">평가 리포트</button>
       </div>
+      <h3>커스텀 지시 (custom_instructions, §5.4)</h3>
+      <p class="hint">사용자가 작성하는 직원 개별 지시(자유 서식, 최대 4000자). 시스템 안전 정책·도구 제약이 항상 우선합니다(§8.2). 비우고 저장하면 지워집니다.</p>
+      <textarea id="empInstructions" rows="4" maxlength="4000" placeholder="예: 항상 테스트를 먼저 작성하고, 커밋은 작은 단위로 나눈다."></textarea>
+      <div class="row">
+        <button id="btnEmpInstructionsSave" class="btn primary">지시 저장</button>
+      </div>
+      <div id="empInstructionsResult" class="status"></div>
       <div id="evalsBox"></div>
     </div>
     <div class="list" id="empList"></div>

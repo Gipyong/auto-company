@@ -41,7 +41,9 @@ public class WebConsoleIntegrationTest {
                 .andExpect(content().string(containsString("id=\"btnCancel\"")))
                 .andExpect(content().string(containsString("id=\"clientList\""))) // ORG-003 외부 고객 카드
                 .andExpect(content().string(containsString("id=\"btnClientSave\"")))
-                .andExpect(content().string(containsString("id=\"goalClient\"")));
+                .andExpect(content().string(containsString("id=\"goalClient\"")))
+                .andExpect(content().string(containsString("id=\"empInstructions\""))) // EMP-001 직원 지시 편집
+                .andExpect(content().string(containsString("id=\"btnEmpInstructionsSave\"")));
     }
 
     @Test
@@ -56,7 +58,8 @@ public class WebConsoleIntegrationTest {
                 .andExpect(content().string(containsString("/cancel")))
                 .andExpect(content().string(containsString("changeNote")))
                 .andExpect(content().string(containsString("/api/v1/clients"))) // ORG-003 중계 명부
-                .andExpect(content().string(containsString("client_relayed"))); // §5.26 고객 원천 표기
+                .andExpect(content().string(containsString("client_relayed"))) // §5.26 고객 원천 표기
+                .andExpect(content().string(containsString("customInstructions"))); // EMP-001 직원 지시 저장
     }
 
     @Test
