@@ -217,7 +217,7 @@ Decision: `project_id, meeting_id?, title, context, options_json, selected_optio
 - **구현 노트**: 현재 구현에는 `MeetingMessage` 대신 `DiscussionMessage`(MessageType `{ DISCUSSION, FEEDBACK, CODE_PROPOSAL, INTERVIEW_Q, INTERVIEW_A }`)가 있다. 인터뷰 질의응답은 요구사항 명확화 세션의 대화 로그 채널로 재활용하며, 구조화 질문의 정본은 `ClarificationQuestion`(§5.24)이다.
 
 ### 5.19 Artifact / Document / DocumentRevision
-Artifact: `project_id, task_id?, artifact_type: source_diff|test_report|build|log|document|image|other, storage_uri, content_hash, size_bytes, media_type, created_by_employee_id?, created_at, retention_policy`.
+Artifact: `project_id, task_id?, artifact_type: source_diff|test_report|build|log|document|image|other, storage_uri, content_hash, size_bytes, media_type, created_by_employee_id?, created_at, retention_policy`. **REQ-004 MVP**: 골 첨부는 Artifact로 저장하며, 파싱 결과 텍스트는 `parsed_text` 컬럼에 인라인 보관, 원본은 `storage_blob`(bytea) 저장, `storage_uri`는 `artifact://{id}` 논리 URI 기록 — 별도 파일 스토리지 연결은 이후 Phase에서 전환. `parse_status: parsed|unsupported|image_pending_vision`는 Artifact에 기록되고 `ClarificationSession.attachments` 참조에도 반복된다(§28.7).
 Document: `project_id, path, title, document_type, current_revision_id, owner_employee_id, source_refs(코드 경로·commit·ADR·issue), freshness_status: current|stale|needs_review|unknown, last_verified_at?/last_verified_commit?`.
 DocumentRevision: `document_id, revision_number, content_hash, artifact_id, change_summary, review_status: pending|approved|rejected, reviewer_employee_id, created_at`. 검색 결과에 근거 파일·revision 리턴; 근거 없는 답은 불확실성 표시·확인 작업 생성 가능.
 
@@ -749,6 +749,7 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 3. **형식 등급**: `native`(MD/TXT/CSV/JSON·PDF 텍스트 레이어)=자체 파서 / `parser`(XLSX·PPTX·DOCX·HWP)=형식별 파서 모듈, HWP는 best-effort / `image`=vision capability가 있는 모델 profile(§5.8) 배정 시에만 내용 해석. 지원 불가·파싱 실패는 **파일 원본 보존**+`unsupported` 기록+세션에 "파일 내용을 텍스트로 보강해주세요" 후속 요구 질문 추가(첨부+텍스트 병행 안내).
 4. **추출과 근거**: 파서/모델이 뽑은 후보 요구는 0단계 선식별(§28.4)에 합류, 항목 근거에 첨부+슬라이드/시트/페이지/이미지 참조를 남긴다. 고객·사용자가 직접 제공한 자료의 명시적 기재는 `client_declared`, 직원이 해석·추론한 것은 `employee_derived`(§5.25). 파일이 질문을 대체하지 않는다 — 추출 누락·오해는 명확화 질문으로 교정.
 5. **보안·한도**: 첨부는 정적 저장만, 실행 금지(스크립트·압축 포함); 첨부 내부 텍스트는 신뢰 불가 데이터 취급(§8.2) — 안의 지시가 정책을 바꾸지 못한다; 고객 데이터 접근 규칙(§21) 적용. 세션당 첨부 수와 용량 한도는 §23 설정(기본 10개/50MB), 초과 400.
+6. **REQ-004 MVP 범위**: 첨부 전송은 `contentBase64`만 지원(`contentUri`는 400 — 원격 참조 수집은 이후 단계). 파싱은 native 중 UTF-8 텍스트(md/txt/csv/json)의 자체 파싱만 실제 구현되어 `parsed`; PDF 텍스트 레이어·parser 등급(xlsx/pptx/docx/hwp)은 **원본 보존+`unsupported`+보강 후속 요구 기록까지만**(파서 모듈은 이후 단계), 이미지는 `image_pending_vision` 기록(vision profile 배정은 §5.8 모델 토폴로지 이후). 파싱된 첨부 텍스트는 골 텍스트와 합류 자료로 0단계 신호 선식별(§28.4)에 사용되며, 요구 항목 근거에 `첨부 {파일명 파일}` 참조를 남긴다.
 
 ---
 

@@ -8,6 +8,7 @@ import com.autocompany.entity.ClarificationSession;
 import com.autocompany.entity.ClarificationSession.SessionStatus;
 import com.autocompany.entity.DiscussionMessage;
 import com.autocompany.entity.enums.MessageType;
+import com.autocompany.repository.ArtifactRepository;
 import com.autocompany.repository.ClarificationQuestionRepository;
 import com.autocompany.repository.ClarificationSessionRepository;
 import com.autocompany.repository.DiscussionMessageRepository;
@@ -33,6 +34,7 @@ public class ClarificationQuestionService {
     private final DiscussionMessageRepository discussionMessageRepository;
     private final ClarificationReviewChainService reviewChainService;
     private final ClarificationExpertSignalDetector signalDetector;
+    private final ArtifactRepository artifactRepository;
 
     // ==================== 질문 구성 ====================
 
@@ -51,7 +53,11 @@ public class ClarificationQuestionService {
             throw new IllegalStateException("Questions must be composed by the pipeline opener employee");
         }
 
-        List<ClarificationExpertSignalDetector.Domain> exemptedDomains = recordSignals(session, session.getGoalText());
+        // §28.4 신호 선식별 — §28.7-4: 파싱된 첨부 텍스트도 출처별로 합류(goal_attachments)
+        List<ClarificationExpertSignalDetector.Domain> exemptedDomains = recordSignals(session, session.getGoalText(), "goal_text");
+        for (AttachmentText source : parsedAttachmentTexts(session)) {
+            exemptedDomains.addAll(recordSignals(session, source.text(), "첨부 " + source.filename() + "(§28.7)"));
+        }
 
         boolean featureExempt = exemptedDomains.contains(ClarificationExpertSignalDetector.Domain.FEATURES);
         List<ClarificationQuestion> composed = new ArrayList<>();
@@ -75,6 +81,19 @@ public class ClarificationQuestionService {
             composed.add(questionRepository.save(question));
             order++;
         }
+        if (reinforceNeeded(session)) {
+            // §28.7-3: 파싱 불가 첨부는 후속 보강 요구 — 상한과 별개로 1건 항상 추가
+            ClarificationQuestion reinforce = ClarificationQuestion.builder()
+                    .session(session)
+                    .displayOrder(order)
+                    .questionType(QuestionType.FREE_TEXT)
+                    .prompt("첨부 파일 중 내용을 확정하지 못한 파일이 있습니다. 파일 내용을 텍스트로 보강해 주세요. (첨부+텍스트 병행)")
+                    .options(java.util.List.of())
+                    .allowOther(false)
+                    .createdByEmployeeId(authorId)
+                    .build();
+            composed.add(questionRepository.save(reinforce));
+        }
 
         // §28.4: 질문은 체인 통과 후에만 waiting_client 전송 — 통과 못하면 OPEN 유지(재협의)
         boolean passed = reviewChainService.runReviewChain(sessionId);
@@ -92,21 +111,54 @@ public class ClarificationQuestionService {
         return composed;
     }
 
-    // [0단계] 신호 기록 + 면제 도메인 목록(§28.4) — 협의 기록은 토론 채널로
-    private List<ClarificationExpertSignalDetector.Domain> recordSignals(ClarificationSession session, String text) {
+    // [0단계] 신호 기록 + 면제 도메인 목록(§28.4) — 출처 라벨을 근거로 남긴다
+    private List<ClarificationExpertSignalDetector.Domain> recordSignals(ClarificationSession session, String text, String sourceLabel) {
         List<ClarificationExpertSignalDetector.Domain> exempted = new ArrayList<>();
         UUID authorId = session.getOpenedByEmployeeId();
-        for (ClarificationExpertSignalDetector.ExpertSignal signal : signalDetector.detect(text)) {
+        for (ClarificationExpertSignalDetector.ExpertSignal signal : signalDetector.detect(text == null ? "" : text)) {
             exempted.add(signal.domain());
             discussionMessageRepository.save(DiscussionMessage.builder()
                     .project(session.getProject())
                     .senderEmployeeId(authorId)
                     .content("[0단계 신호 선식별] [" + signal.domain() + "] 감지(" + signal.evidence()
-                            + ") — 해당 영역 질문 면제·간략화, 근거 원문(goal_text) 기록")
+                            + ") — 해당 영역 질문 면제·간략화, 근거 원문(" + sourceLabel + ") 기록")
                     .messageType(MessageType.DISCUSSION)
                     .build());
         }
         return exempted;
+    }
+
+    /** §28.7-4: 파스에 성공한(goal_attachments) 첨부 텍스트만 신호 출처로 합류한다 */
+    private List<AttachmentText> parsedAttachmentTexts(ClarificationSession session) {
+        if (session.getAttachments() == null || session.getAttachments().isEmpty()) {
+            return List.of();
+        }
+        List<UUID> parsedIds = session.getAttachments().stream()
+                .filter(r -> "PARSED".equals(r.parseStatus()))
+                .map(r -> r.artifactId())
+                .toList();
+        if (parsedIds.isEmpty()) {
+            return List.of();
+        }
+        java.util.Map<UUID, String> filenameByArtifact = new java.util.HashMap<>();
+        for (ClarificationSession.AttachmentRef ref : session.getAttachments()) {
+            filenameByArtifact.put(ref.artifactId(), ref.filename());
+        }
+        List<AttachmentText> sources = new ArrayList<>();
+        for (com.autocompany.entity.Artifact artifact : artifactRepository.findAllById(parsedIds)) {
+            if (artifact.getParsedText() != null && !artifact.getParsedText().isBlank()) {
+                sources.add(new AttachmentText(filenameByArtifact.getOrDefault(artifact.getId(), artifact.getId().toString()), artifact.getParsedText()));
+            }
+        }
+        return sources;
+    }
+
+    private boolean reinforceNeeded(ClarificationSession session) {
+        return session.getAttachments() != null && session.getAttachments().stream()
+                .anyMatch(r -> "UNSUPPORTED".equals(r.parseStatus()));
+    }
+
+    private record AttachmentText(String filename, String text) {
     }
 
     // §28.3 예시 포맷 — 산업 용어만, 기술 질문 미포함(§28.2)

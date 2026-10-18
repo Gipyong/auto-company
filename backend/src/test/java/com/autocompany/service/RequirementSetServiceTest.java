@@ -6,6 +6,7 @@ import com.autocompany.entity.ClarificationSession;
 import com.autocompany.entity.Project;
 import com.autocompany.entity.RequirementSet;
 import com.autocompany.entity.User;
+import com.autocompany.repository.ArtifactRepository;
 import com.autocompany.repository.ClarificationQuestionRepository;
 import com.autocompany.repository.ClarificationSessionRepository;
 import com.autocompany.repository.DiscussionMessageRepository;
@@ -37,6 +38,7 @@ public class RequirementSetServiceTest {
     private ClarificationSessionRepository sessionRepository;
     private ClarificationQuestionRepository questionRepository;
     private DiscussionMessageRepository discussionMessageRepository;
+    private ArtifactRepository artifactRepository;
     private ClarificationExpertSignalDetector signalDetector;
     private RequirementSetService service;
 
@@ -52,9 +54,10 @@ public class RequirementSetServiceTest {
         sessionRepository = mock(ClarificationSessionRepository.class);
         questionRepository = mock(ClarificationQuestionRepository.class);
         discussionMessageRepository = mock(DiscussionMessageRepository.class);
+        artifactRepository = mock(ArtifactRepository.class);
         signalDetector = new ClarificationExpertSignalDetector();
         service = new RequirementSetService(requirementSetRepository, sessionRepository,
-                questionRepository, discussionMessageRepository, signalDetector, objectMapper);
+                questionRepository, discussionMessageRepository, signalDetector, objectMapper, artifactRepository);
 
         sessionId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -225,5 +228,48 @@ public class RequirementSetServiceTest {
         RequirementSetService.RequirementItem item = outcome.content().nonFunctional().get(0);
         assertEquals("client_declared", item.source());
         assertTrue(item.detail().contains("암호화"));
+    }
+
+    @Test
+    void freezeRecordsAttachmentSignalsWithFileEvidence() {
+        // §28.7-4: 첨부 파싱 텍스트 기반의 신호는 근거에 첨부 파일 참조를 남긴다
+        UUID artifactId = UUID.randomUUID();
+        session.setGoalText("블로그 사이트 만들어줘");
+        session.setAttachments(java.util.List.of(new ClarificationSession.AttachmentRef(
+                artifactId, "text/markdown", "보안요건.md", 20L, "PARSED")));
+        com.autocompany.entity.Artifact artifact = com.autocompany.entity.Artifact.builder()
+                .id(artifactId)
+                .parsedText("개인정보 암호화 필수, 접근 인증 정책 적용")
+                .build();
+        when(artifactRepository.findAllById(java.util.List.of(artifactId))).thenReturn(java.util.List.of(artifact));
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId)).thenReturn(List.of());
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId);
+
+        RequirementSetService.RequirementItem security = outcome.content().nonFunctional().get(0);
+        assertEquals("client_declared", security.source());
+        assertTrue(security.evidence().contains("첨부 보안요건.md 파일")); // 항목 근거 = 첨부 참조(§5.25·§28.7-4)
+        assertTrue(security.detail().contains("암호화"));
+    }
+
+    @Test
+    void freezeSupportsAttachmentsOnlyGoal() {
+        session.setGoalText(null); // §28.7(1): 첨부 단독 접수 세션
+        UUID artifactId = UUID.randomUUID();
+        session.setAttachments(java.util.List.of(new ClarificationSession.AttachmentRef(
+                artifactId, "text/markdown", "보안요건.md", 20L, "PARSED")));
+        com.autocompany.entity.Artifact artifact = com.autocompany.entity.Artifact.builder()
+                .id(artifactId)
+                .parsedText("개인정보 암호화 필수")
+                .build();
+        when(artifactRepository.findAllById(java.util.List.of(artifactId))).thenReturn(java.util.List.of(artifact));
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId)).thenReturn(List.of());
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId);
+
+        assertTrue(outcome.content().functional().stream()
+                .noneMatch(i -> "초기 목표".equals(i.title()))); // 골 텍스트가 없으면 기록하지 않는다
+        assertEquals(1, outcome.content().nonFunctional().size());
+        assertTrue(outcome.content().nonFunctional().get(0).evidence().contains("첨부"));
     }
 }

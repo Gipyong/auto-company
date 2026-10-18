@@ -39,6 +39,7 @@ public class RequirementSetService {
     private final DiscussionMessageRepository discussionMessageRepository;
     private final ClarificationExpertSignalDetector signalDetector;
     private final ObjectMapper objectMapper;
+    private final com.autocompany.repository.ArtifactRepository artifactRepository;
 
     public record RequirementItem(String title, String detail, String source, String evidence, UUID questionId) {
     }
@@ -138,7 +139,9 @@ public class RequirementSetService {
         List<RequirementItem> openRisks = new ArrayList<>();
 
         String goal = session.getGoalText();
-        functional.add(new RequirementItem("초기 목표", truncate(goal), "client_declared", "goal_text 원문", null));
+        if (goal != null && !goal.isBlank()) {
+            functional.add(new RequirementItem("초기 목표", truncate(goal), "client_declared", "goal_text 원문", null));
+        }
 
         StringBuilder freeText = new StringBuilder();
         for (ClarificationQuestion q : questions) {
@@ -190,17 +193,42 @@ public class RequirementSetService {
             }
         }
 
-        // §28.2 signals → 명시 제약(client_declared) 기록. 암묵 재평가·무시 금지
-        String signalText = freeText.isEmpty() ? goal : goal + "\n" + freeText;
-        for (ClarificationExpertSignalDetector.ExpertSignal s : signalDetector.detect(signalText)) {
-            switch (s.domain()) {
-                case TECH_STACK -> constraints.add(new RequirementItem("기술 스택 제약", "고객이 제시한 방식 수용: " + s.evidence(), "client_declared", "goal_text", null));
-                case SECURITY -> nonFunctional.add(new RequirementItem("보안 요건", "고객 명시 신호: " + s.evidence(), "client_declared", "goal_text", null));
-                case BUDGET -> constraints.add(new RequirementItem("비용 제약", "고객 발화 신호: " + s.evidence(), "client_declared", "goal_text", null));
-                default -> { /* 디자인/UX/연동/기능 신호는 상위 답변 근거로 충족 — 중복 기록 생략 */ }
+        // §28.2 signals → 명시 제약(client_declared) 기록. 암묵 재평가·무시 금지.
+        // §28.7-4(REQ-004): 파싱된 첨부 텍스트도 출처별 판정 — 항목 근거에 첨부 파일 참조를 남긴다.
+        recordSourceSignals(session, goal, "goal_text", functional, nonFunctional, constraints);
+        recordSourceSignals(session, freeText.toString(), "답변 기타", functional, nonFunctional, constraints);
+        if (session.getAttachments() != null && !session.getAttachments().isEmpty()) {
+            java.util.Map<UUID, String> filenameByArtifact = new java.util.HashMap<>();
+            for (ClarificationSession.AttachmentRef ref : session.getAttachments()) {
+                filenameByArtifact.put(ref.artifactId(), ref.filename());
+            }
+            List<UUID> parsedIds = session.getAttachments().stream()
+                    .filter(r -> "PARSED".equals(r.parseStatus()))
+                    .map(ClarificationSession.AttachmentRef::artifactId)
+                    .toList();
+            for (com.autocompany.entity.Artifact artifact : artifactRepository.findAllById(parsedIds)) {
+                recordSourceSignals(session, artifact.getParsedText(),
+                        "첨부 " + filenameByArtifact.getOrDefault(artifact.getId(), artifact.getId().toString()) + " 파일",
+                        functional, nonFunctional, constraints);
             }
         }
         return new RequirementContent(functional, nonFunctional, constraints, outOfScope, openRisks);
+    }
+
+    private void recordSourceSignals(ClarificationSession session, String text, String evidenceLabel,
+                                     List<RequirementItem> functional, List<RequirementItem> nonFunctional,
+                                     List<RequirementItem> constraints) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        for (ClarificationExpertSignalDetector.ExpertSignal s : signalDetector.detect(text)) {
+            switch (s.domain()) {
+                case TECH_STACK -> constraints.add(new RequirementItem("기술 스택 제약", "고객이 제시한 방식 수용: " + s.evidence(), "client_declared", evidenceLabel, null));
+                case SECURITY -> nonFunctional.add(new RequirementItem("보안 요건", "고객 명시 신호: " + s.evidence(), "client_declared", evidenceLabel, null));
+                case BUDGET -> constraints.add(new RequirementItem("비용 제약", "고객 발화 신호: " + s.evidence(), "client_declared", evidenceLabel, null));
+                default -> { /* 디자인/UX/연동/기능 신호는 상위 답변 근거로 충족 — 중복 기록 생략 */ }
+            }
+        }
     }
 
     private String firstValue(ClarificationQuestion q) {
