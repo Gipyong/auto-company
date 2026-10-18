@@ -3,14 +3,15 @@ import { api } from "../api";
 import { useStore } from "../store";
 import { useToast } from "../toast";
 import { profileLabel } from "../lib";
-import { Badge } from "../components";
+import { Badge, EmptyState } from "../components";
 
 const TASK_TYPE_HINT = "TASK, BUG, TEST, REVIEW, DOCUMENTATION, EPIC, STORY, SPIKE";
 
-export default function GradesTab({ goSetup }: { goSetup: () => void }) {
+export default function GradesTab() {
   const store = useStore();
   const toast = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [poolGradeId, setPoolGradeId] = useState<string | null>(null);
   const [pool, setPool] = useState<{ profileId: string }[]>([]);
@@ -27,15 +28,6 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
   const poolGrade = store.grades.find((x) => x.id === poolGradeId) || null;
   const editingGrade = editingId ? store.grades.find((g) => g.id === editingId) || null : null;
 
-  const requireCtx = () => {
-    if (!store.ctx) {
-      toast.show("먼저 '시작' 탭에서 조직을 연결하세요.", "err");
-      goSetup();
-      return false;
-    }
-    return true;
-  };
-
   const resetGradeForm = () => {
     setEditingId(null);
     if (codeRef.current) codeRef.current.value = "";
@@ -50,6 +42,21 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
     if (modeRef.current) modeRef.current.value = "PRIORITY";
   };
 
+  const openForm = () => {
+    resetGradeForm();
+    setShowForm(true);
+    window.setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+
+  const toggleForm = () => {
+    if (showForm) {
+      setShowForm(false);
+      resetGradeForm();
+      return;
+    }
+    openForm();
+  };
+
   useEffect(() => {
     resetGradeForm();
   }, []);
@@ -58,6 +65,7 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
     const g = store.grades.find((x) => x.id === id);
     if (!g) return;
     setEditingId(id);
+    setShowForm(true);
     if (codeRef.current) codeRef.current.value = g.code || "";
     if (nameRef.current) nameRef.current.value = g.name || "";
     if (ordinalRef.current) ordinalRef.current.value = String(g.ordinal ?? 1);
@@ -68,7 +76,6 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
   };
 
   const saveGrade = async () => {
-    if (!requireCtx()) return;
     const body: Record<string, unknown> = {
       code: codeRef.current?.value.trim() || "",
       name: nameRef.current?.value.trim() || "",
@@ -91,9 +98,10 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
         await api("PATCH", `/api/v1/grades/${editingId}`, body);
         toast.show("직급을 수정했습니다.");
       } else {
-        await api("POST", "/api/v1/grades", { ...body, organizationId: store.ctx!.organizationId });
+        await api("POST", "/api/v1/grades", { ...body, organizationId: store.ctx.organizationId });
         toast.show("직급을 추가했습니다.");
       }
+      setShowForm(false);
       resetGradeForm();
       await store.refreshAll();
     } catch (e) {
@@ -170,40 +178,116 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
 
   return (
     <>
-      <div className="card" ref={formRef}>
+      <div className="card">
         <div className="row between">
-          <h2 id="gradeFormTitle">
-            {editingGrade ? `직급 수정 — ${editingGrade.code} ${editingGrade.name}` : "직급 추가"}
+          <h2>
+            직급 <Badge>{store.grades.length}</Badge>
           </h2>
-          <button
-            id="btnGradeCancel"
-            className="btn ghost small"
-            hidden={!editingId}
-            onClick={resetGradeForm}
-          >
-            취소
+          {store.grades.length ? (
+            <button id="btnGradeAdd" className="btn ghost small" onClick={toggleForm}>
+              {showForm ? "닫기" : "+ 직급 추가"}
+            </button>
+          ) : null}
+        </div>
+        <div className="list" id="gradeList">
+          {!store.grades.length ? (
+            showForm ? null : (
+              <EmptyState
+                title="아직 직급이 없습니다"
+                hint="직급은 업무 유형과 모델 선택 방식을 묶는 단위입니다. 기본 템플릿이 적용되면 L1~L5가 자동 생성됩니다."
+                action="첫 직급 추가"
+                onAction={openForm}
+              />
+            )
+          ) : (
+            store.grades.map((g) => (
+              <div className="item" key={g.id}>
+                <div className="title">
+                  {g.code} {g.name} <Badge>ordinal {g.ordinal}</Badge>{" "}
+                  <Badge>{g.modelSelectionMode}</Badge>
+                  {g.templateDefault ? <Badge kind="indigo">템플릿</Badge> : null}
+                  <Badge kind={g.status === "ACTIVE" ? "green" : ""}>{g.status}</Badge>
+                </div>
+                {g.responsibilities ? <div className="sub">{g.responsibilities}</div> : null}
+                {g.taskTypes && g.taskTypes.length ? (
+                  <div className="chips">
+                    {g.taskTypes.map((t) => (
+                      <span className="chip" key={t}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="actions">
+                  <button
+                    className="btn ghost small"
+                    data-act="pool"
+                    data-id={g.id}
+                    onClick={() => openPool(g.id)}
+                  >
+                    모델 풀
+                  </button>
+                  <button
+                    className="btn ghost small"
+                    data-act="edit"
+                    data-id={g.id}
+                    onClick={() => editGrade(g.id)}
+                  >
+                    수정
+                  </button>
+                  <button
+                    className="btn danger small"
+                    data-act="del"
+                    data-id={g.id}
+                    onClick={() => deleteGrade(g.id)}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {showForm ? (
+        <div className="card" ref={formRef}>
+          <div className="row between">
+            <h2 id="gradeFormTitle">
+              {editingGrade ? `직급 수정 — ${editingGrade.code} ${editingGrade.name}` : "직급 추가"}
+            </h2>
+            <button
+              id="btnGradeCancel"
+              className="btn ghost small"
+              onClick={() => {
+                setShowForm(false);
+                resetGradeForm();
+              }}
+            >
+              취소
+            </button>
+          </div>
+          <label htmlFor="gradeCode">코드 (조직 내 고유, 예: L1)</label>
+          <input id="gradeCode" ref={codeRef} autoComplete="off" />
+          <label htmlFor="gradeName">이름</label>
+          <input id="gradeName" ref={nameRef} autoComplete="off" />
+          <label htmlFor="gradeOrdinal">순서 (ordinal, 클수록 상위)</label>
+          <input id="gradeOrdinal" ref={ordinalRef} type="number" min={1} inputMode="numeric" />
+          <label htmlFor="gradeResp">책임 범위</label>
+          <textarea id="gradeResp" ref={respRef} rows={2} />
+          <label htmlFor="gradeTaskTypes">담당 업무 유형 (콤마 구분: {TASK_TYPE_HINT})</label>
+          <input id="gradeTaskTypes" ref={taskTypesRef} autoComplete="off" />
+          <label htmlFor="gradeMode">모델 선택 방식</label>
+          <select id="gradeMode" ref={modeRef} defaultValue="PRIORITY">
+            <option value="PRIORITY">PRIORITY (우선순위 순)</option>
+            <option value="TASK_BASED">TASK_BASED (작업 특성 기반)</option>
+            <option value="BUDGET_OPTIMIZED">BUDGET_OPTIMIZED (비용 최적화)</option>
+          </select>
+          <button id="btnGradeSave" className="btn primary" disabled={saving} onClick={saveGrade}>
+            저장
           </button>
         </div>
-        <label htmlFor="gradeCode">코드 (조직 내 고유, 예: L1)</label>
-        <input id="gradeCode" ref={codeRef} autoComplete="off" />
-        <label htmlFor="gradeName">이름</label>
-        <input id="gradeName" ref={nameRef} autoComplete="off" />
-        <label htmlFor="gradeOrdinal">순서 (ordinal, 클수록 상위)</label>
-        <input id="gradeOrdinal" ref={ordinalRef} type="number" min={1} inputMode="numeric" />
-        <label htmlFor="gradeResp">책임 범위</label>
-        <textarea id="gradeResp" ref={respRef} rows={2} />
-        <label htmlFor="gradeTaskTypes">담당 업무 유형 (콤마 구분: {TASK_TYPE_HINT})</label>
-        <input id="gradeTaskTypes" ref={taskTypesRef} autoComplete="off" />
-        <label htmlFor="gradeMode">모델 선택 방식</label>
-        <select id="gradeMode" ref={modeRef} defaultValue="PRIORITY">
-          <option value="PRIORITY">PRIORITY (우선순위 순)</option>
-          <option value="TASK_BASED">TASK_BASED (작업 특성 기반)</option>
-          <option value="BUDGET_OPTIMIZED">BUDGET_OPTIMIZED (비용 최적화)</option>
-        </select>
-        <button id="btnGradeSave" className="btn primary" disabled={saving} onClick={saveGrade}>
-          저장
-        </button>
-      </div>
+      ) : null}
 
       {poolGradeId && poolGrade ? (
         <div className="card" id="poolPanel">
@@ -266,45 +350,6 @@ export default function GradesTab({ goSetup }: { goSetup: () => void }) {
           </button>
         </div>
       ) : null}
-
-      <div className="list" id="gradeList">
-        {!store.grades.length ? (
-          <div className="item">
-            <div className="sub">
-              직급이 없습니다. 위에서 추가하거나 '시작' 탭에서 기본 템플릿을 가져오세요.
-            </div>
-          </div>
-        ) : (
-          store.grades.map((g) => (
-            <div className="item" key={g.id}>
-              <div className="title">
-                {g.code} {g.name} <Badge>ordinal {g.ordinal}</Badge> <Badge>{g.modelSelectionMode}</Badge>
-                {g.templateDefault ? <Badge kind="indigo">템플릿</Badge> : null}
-                <Badge kind={g.status === "ACTIVE" ? "green" : ""}>{g.status}</Badge>
-              </div>
-              {g.responsibilities ? <div className="sub">{g.responsibilities}</div> : null}
-              {g.taskTypes && g.taskTypes.length ? (
-                <div className="chips">
-                  {g.taskTypes.map((t) => (
-                    <span className="chip" key={t}>{t}</span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="actions">
-                <button className="btn ghost small" data-act="pool" data-id={g.id} onClick={() => openPool(g.id)}>
-                  모델 풀
-                </button>
-                <button className="btn ghost small" data-act="edit" data-id={g.id} onClick={() => editGrade(g.id)}>
-                  수정
-                </button>
-                <button className="btn danger small" data-act="del" data-id={g.id} onClick={() => deleteGrade(g.id)}>
-                  삭제
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
     </>
   );
 }

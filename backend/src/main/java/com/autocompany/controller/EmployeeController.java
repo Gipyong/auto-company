@@ -3,6 +3,7 @@ package com.autocompany.controller;
 import com.autocompany.entity.*;
 import com.autocompany.entity.enums.TaskType;
 import com.autocompany.service.*;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -59,11 +60,11 @@ public class EmployeeController {
 
     // ==================== Employee ====================
     
-    // 직원 채용
+    // 직원 채용 (§5.3 teamId — 선택, active 팀만)
     @PostMapping("/employees")
     public ResponseEntity<Employee> hireEmployee(@RequestBody HireRequest request) {
         Employee employee = employeeService.createEmployee(request.userId, request.name, request.role,
-                request.customInstructions);
+                request.customInstructions, request.teamId);
         return ResponseEntity.status(201).body(employee);
     }
 
@@ -89,11 +90,12 @@ public class EmployeeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 직원 부분 갱신 (EMP-001 — 커스텀 지시 편집 §5.4)
+    // 직원 부분 갱신 (EMP-001 — 커스텀 지시 편집 §5.4; TEAM-001 — teamId 키 제시 시 배치/해제 §5.3)
     @PatchMapping("/employees/{id}")
     public ResponseEntity<Employee> updateEmployee(@PathVariable UUID id,
                                                    @RequestBody EmployeeUpdateRequest request) {
-        return ResponseEntity.ok(employeeService.updateEmployee(id, request.name, request.customInstructions));
+        return ResponseEntity.ok(employeeService.updateEmployee(id, request.name, request.customInstructions,
+                request.getTeamId(), request.isTeamIdPresent()));
     }
 
     // 직원 직급 배정/변경
@@ -194,6 +196,26 @@ public class EmployeeController {
         return ResponseEntity.status(201).body(project);
     }
 
+    // §17 WEB-003 — 콘솔 프로젝트 목록(사용자 소유, 최신순)
+    @GetMapping("/projects")
+    public ResponseEntity<List<Project>> getProjects(@RequestParam UUID userId) {
+        return ResponseEntity.ok(projectService.getProjectsByUser(userId));
+    }
+
+    // §17 WEB-003 — 프로젝트 상세
+    @GetMapping("/projects/{id}")
+    public ResponseEntity<Project> getProject(@PathVariable UUID id) {
+        return projectService.getProject(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // §17 WEB-003 — 프로젝트 업무 목록
+    @GetMapping("/projects/{id}/tasks")
+    public ResponseEntity<List<Task>> getProjectTasks(@PathVariable UUID id) {
+        return ResponseEntity.ok(taskService.getTasksByProject(id));
+    }
+
     // ==================== Task ====================
     
     @PostMapping("/tasks")
@@ -253,11 +275,30 @@ public class EmployeeController {
         public String name;
         public String role;
         public String customInstructions; // §5.4 EMP-001(선택)
+        public UUID teamId;               // §5.3 TEAM-001(선택 — active 팀만)
     }
 
     public static class EmployeeUpdateRequest {
         public String name;
         public String customInstructions; // §5.4 EMP-001 — null 유지, 빈 문자열 지우기
+
+        // §5.3 TEAM-001 — 키 제시(present) 시에만 반영: null이면 미배정 해제
+        private UUID teamId;
+        private boolean teamIdPresent;
+
+        @JsonSetter("teamId")
+        public void setTeamId(UUID teamId) {
+            this.teamId = teamId;
+            this.teamIdPresent = true;
+        }
+
+        public UUID getTeamId() {
+            return teamId;
+        }
+
+        public boolean isTeamIdPresent() {
+            return teamIdPresent;
+        }
     }
 
     public static class GradeAssignRequest {

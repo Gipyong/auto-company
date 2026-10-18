@@ -3,11 +3,21 @@ export interface Ctx {
   userId: string;
 }
 
+export interface Team {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  createdAt?: string;
+}
+
 export interface Employee {
   id: string;
   name: string;
   role: string;
   gradeId?: string | null;
+  teamId?: string | null;
   status: string;
   systemPrompt?: string | null;
   customInstructions?: string | null;
@@ -54,12 +64,26 @@ export interface Profile {
   enabled: boolean;
 }
 
-export interface Client {
+export interface ProjectLite {
   id: string;
-  displayName: string;
-  contact?: string | null;
-  status: string;
+  name: string;
+  description?: string | null;
+  status?: string;
   createdAt?: string;
+}
+
+export interface TaskRow {
+  id: string;
+  title?: string;
+  type?: string;
+  taskType?: string;
+  status?: string;
+  description?: string | null;
+  assignee?: { id: string; name?: string } | null;
+  createdAt?: string;
+  attemptCount?: number | null;
+  maxAttempts?: number | null;
+  resultSummary?: string | null;
 }
 
 export interface SessionAttachment {
@@ -140,36 +164,6 @@ export interface EvaluationReport {
     feedbackSummary?: string | null;
     evidenceRefs?: string[] | null;
   }[];
-}
-
-export interface ProjectLite {
-  id: string;
-  name: string;
-  description?: string | null;
-  clientId?: string | null;
-  createdAt?: string;
-}
-
-export interface TaskLite {
-  id: string;
-  title: string;
-  taskType: string;
-  status: string;
-  projectId: string;
-  assigneeId: string;
-  createdAt?: string;
-}
-
-export interface TaskResponse {
-  id: string;
-  title?: string;
-  type?: string;
-  status?: string;
-  description?: string | null;
-  createdAt?: string;
-  attemptCount?: number | null;
-  maxAttempts?: number | null;
-  resultSummary?: string | null;
 }
 
 export interface GoalAttachmentPayload {
