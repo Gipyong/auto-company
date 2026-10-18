@@ -1,11 +1,12 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.5 (압축 정리 리비전)  
+> 버전: 1.6 (사용자 다중 포지션·다중 모달 접수·직원 커스텀 지시)  
 > 상태: 구현 기준 설계 — Java 21 / Spring Boot 3.x(안정 버전) + Maven 백엔드 기준  
 > 목표: 로컬 우선으로 실행 가능하고, 다른 PC·서버로 재현/배포 가능한 AI 기반 소프트웨어 개발 조직 플랫폼  
-> 위치 핵심: 사용자는 **외주 고객(Client)** 포지션이다. 고객은 요구사항만 제출·확정하고, 기술 결정과 작업 분해·배정·실행은 AI 직원들이 자율 수행한다(§28, §29).
+> 위치 핵심: 사용자는 고정 포지션이 아니다 — **운영자**(조직 구성·통제), **발주 고객**(요구 제출·확정), **기술 조언자·전문가**(디자이너·TO 등 직접 지시), **외부 고객 중계자**를 오간다. 시스템은 사용자를 전문가·비전문가로 단정하지 않고 전문성 신호에 따라 조응한다(§0, §28). 요구사항 이외의 기술 결정은 기본적으로 AI 직원 내부 협의가 처리한다(§28, §29).
 
 변경 이력:
+- v1.6: 사용자 다중 포지션(운영자·발주 고객·기술 조언자·전문가·중계자), 외부 고객(Client) 중계, **사용자 개설 요구사항 세션**(§28.6), 골 다중 모달 접수(파일·이미지 첨부 §28.7), 직원 커스텀 지시(custom_instructions) 설계. 형식 오류 정정.
 - v1.5: 전체 압축 정리. 규범적 내용(엔티티·API·프로토콜·결정)은 유지하고 중복 서술을 제거했다.
 - v1.4: 사용자=외주 고객 포지션 확정. 요구사항 명확화 파이프라인(§28)과 자율 오케스트레이션(§29) 신설. 고객 자발적 전문 요구사항 수용 설계 포함.
 - v1.3: 승진/강등 제거, 피드백 전용 평가 시스템(§15) 도입. 피드백 컨텍스트 10KB/직원 호환 유지.
@@ -24,7 +25,7 @@
 8. **Human-readable artifacts**: 주요 결정은 ADR·이슈·PR·테스트·문서 버전과 연결.
 9. **Reproducibility**: 설정·프롬프트·도구 버전·모델 식별자·커밋·테스트 환경 기록.
 10. **Safe defaults**: 설치 직후 작동하는 기본 템플릿 제공. 위험 권한·자동 배포는 기본 비활성.
-11. **Client faces requirements only**: 고객에게 *먼저* 묻는 것은 요구사항(범위·우선순위·품질·제약)뿐. 기술 질문은 내부 회의로 처리. 단 "묻지 않는다"≠"받지 않는다": 고객이 자발적으로 전문 요구를 제시하면 전문성 신호이며, 이를 제약으로 수용하고 해당 영역의 질문을 면제한다(§28.2).
+11. **User is multi-position**: 사용자는 운영자(직원·직급·모델 풀·직원 지시 등 조직 전 권한), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 기술·디자인 지시), 외부 고객 중계자(유치 고객의 요구·의견을 그대로 전달)를 오간다. 시스템은 어느 포지션에서든 사용자의 전문성을 고정 단정하지 않는다 — 신호 기반 적응(§28.2): 전문 요구는 `client_declared` 제약으로 수용, 신호 없으면 기술 사항은 묻지 않고 내부 결정.
 12. **Requirements are frozen records**: 동결된 요구사항 기록은 불변. 진화는 새 세션·새 버전으로만(§28.6). 이후 작업 분해는 동결 기록을 근거로 참조한다.
 
 주요 용어:
@@ -36,7 +37,7 @@
 
 ## 1. 제품 범위
 
-**MVP 포함**: 로컬 웹 콘솔 / 조직·직원·직급·모델 관리 / **고객 골(Goal) 단일 프롬프트 접수** / **요구사항 명확화 파이프라인(협의→구조화 질문→응답→동결, §28)** / **자율 오케스트레이션(분해·자동 배정, §29)** / Git 저장소 연결 / 모델 호출·도구 실행(초기 Mock 모델) / 격리 Docker workspace / 브랜치·PR·리뷰·테스트 게이트 / 문서 관리와 질의응답 / 비용·실행 로그 / 재시도·대기·복구 / 감사 로그.
+**MVP 포함**: 로컬 웹 콘솔 / 조직·직원·직급·모델 관리(운영자 포지션) / **고객 골(Goal) 접수 — 텍스트+파일·이미지 첨부(§28.7)** / **요구사항 명확화 파이프라인(협의→구조화 질문→응답→동결, §28)** / **자율 오케스트레이션(분해·자동 배정, §29)** / Git 저장소 연결 / 모델 호출·도구 실행(초기 Mock 모델) / 격리 Docker workspace / 브랜치·PR·리뷰·테스트 게이트 / 문서 관리와 질의응답 / 비용·실행 로그 / 재시도·대기·복구 / 감사 로그.
 
 **MVP 이후**: 직무별 동료 평가 관측 / 정교한 회의 프로토콜 / 다중 프로젝트 스케줄링 / VM 실행기 / webhook 동기화 / 운영 모니터링 / 분산 worker / 성과 기반 모델·조직 최적화.
 
@@ -60,8 +61,8 @@ Docker Compose 기반 로컬 설치. 구성 대상: `web` UI+API(+초기 worker 
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                       Client Console                          │
-│ 골(Goal) 입력 · 명확화 세션(질문/응답) · 진행 요약              │
+│               Console (운영자·고객 포지션, §0 원칙 11)              │
+│ 골(Goal) 입력(텍스트+첨부) · 명확화 세션(질문/응답·개설·진화)   │
 │ Dashboard · Org · Employees · Projects · Costs · Audit       │
 └──────────────────────────────┬──────────────────────────────┘
                                │ REST / SSE
@@ -105,7 +106,7 @@ Docker Compose 기반 로컬 설치. 구성 대상: `web` UI+API(+초기 worker 
 ```
 
 논리 모듈(§3) — 모놀리식 한 코드베이스에서 패키지 경계로 구현, 마이크로서비스 분리는 초기에 하지 않는다:
-1. Organization(직원·직급·모델 풀·권한) 2. Project(설정·저장소·환경) 3. **Goal & Clarification(§28)** 4. **Orchestration(§29)** 5. Task(의존성·완료 조건) 6. Workflow Engine(전이·재시도·타임아웃) 7. Agent Runtime 8. Model Router 9. Tool Broker 10. Workspace Manager 11. Git Integration 12. Quality Gate 13. Knowledge & Docs 14. Evaluation 15. Budget & Usage 16. Audit & Observability
+1. Organization(직원·직급·모델 풀·권한·수임 고객) 2. Project(설정·저장소·환경) 3. **Goal & Clarification(§28; 다중 모달 접수·사용자 개설 세션 포함)** 4. **Orchestration(§29)** 5. Task(의존성·완료 조건) 6. Workflow Engine(전이·재시도·타임아웃) 7. Agent Runtime 8. Model Router 9. Tool Broker 10. Workspace Manager 11. Git Integration 12. Quality Gate 13. Knowledge & Docs 14. Evaluation 15. Budget & Usage 16. Audit & Observability
 
 ---
 
@@ -126,7 +127,7 @@ Docker Compose 기반 로컬 설치. 구성 대상: `web` UI+API(+초기 worker 
 - 패키징: Compose, multi-stage 이미지, `.env.example`, 백업 스크립트
 - 시간은 UTC 저장·UI 로컬 표시. 금액은 Decimal/정수 단위. JSON 필드는 검색·제약·관계의 대체재가 아니다. SDK 타입을 DB 스키마/도메인에 직접 결합 금지. 외부 호출은 timeout·retry·idempotency key 필수.
 
-Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure 방향) — 도메인은 Spring/JPA/SDK 미의존. JPA 엔티티를 API 응답으로 반환 금지(DTO 분리, lazy 노출 차단). 트랜잭션은 유스케이스 경계; 외부 모델/Git/Docker 호출은 DB 트랜잭션 안에서 금지. 장기 작업은 worker가 reservation 동시성은 조건부 UPDATE/잠금으로 원자화. 프로퍼티는 `@ConfigurationProperties`+Bean Validation. 비밀 로그 금지. SDK는 infrastructure 어댑터에 격리하고 도메인은 `ModelAdapter` 계약만 본다.
+Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure 방향) — 도메인은 Spring/JPA/SDK 미의존. JPA 엔티티를 API 응답으로 반환 금지(DTO 분리, lazy 노출 차단). 트랜잭션은 유스케이스 경계; 외부 모델/Git/Docker 호출은 DB 트랜잭션 안에서 금지. 장기 작업은 worker가 수행; reservation 동시성은 조건부 UPDATE/잠금으로 원자화. 프로퍼티는 `@ConfigurationProperties`+Bean Validation. 비밀 로그 금지. SDK는 infrastructure 어댑터에 격리하고 도메인은 `ModelAdapter` 계약만 본다.
 
 ---
 
@@ -144,9 +145,9 @@ Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure
 `id, organization_id, name, slug, description?, team_lead_employee_id?, purpose, status: active|archived`.
 
 ### 5.4 Employee
-`id, organization_id, team_id?, employee_code(unique), display_name, job_family, specialties, grade_id(JobGrade 참조), employment_status: active|paused|on_leave|retired, availability_status: available|working|waiting|rate_limited|blocked, system_profile(직무 원칙, 민감정보 금지), tool_policy_id, memory_policy, manager_employee_id?, created_by_user_id, retired_at?`.
+`id, organization_id, team_id?, employee_code(unique), display_name, job_family, specialties, grade_id(JobGrade 참조), employment_status: active|paused|on_leave|retired, availability_status: available|working|waiting|rate_limited|blocked, system_profile(직무 원칙, 민감정보 금지), custom_instructions(text?, 사용자가 작성한 개별 지시 — 직원 구성·수정 시 부여; AGENTS.md류 자유 서식), tool_policy_id, memory_policy, manager_employee_id?, created_by_user_id, retired_at?`.
 
-**구현 노트**: 현재 구현 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
+**구현 노트**: 현재 구현에 `systemPrompt`(템플릿 직무 원칙)만 있고 `custom_instructions`는 미구현(EMP-001). 현재 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
 
 **중요**: 직원은 개별 모델·모델 정책을 갖지 않는다. 직급 하나를 가지며 가용 모델은 직급의 풀(§5.9)로 결정. 직급 부여·변경은 사용자 수동(§15) — 자동 승진/강등 없음.
 
@@ -171,7 +172,7 @@ JobGrade(직급): `id, organization_id, code(unique: L1..), name, ordinal(int, �
 - 정책은 풀 위 추가 제한으로만 작동; 더 제한적 정책 우선. 예산 한도는 BudgetPolicy(§5.21).
 
 ### 5.10 Project
-`id, organization_id, name, slug, description?, goal?, status: draft|planning|active|paused|blocked|completed|archived, repository_provider: local_git|github|gitlab|other, repository_url?/repository_path?(allowlist 검증), default_branch, tech_stack, definition_of_done, quality_policy_id, budget_policy_id, workspace_policy_id, document_policy_id, owner_user_id, project_lead_employee_id?, start_at?/target_end_at?, metadata`.
+`id, organization_id, name, slug, description?, goal?, client_id?(§5.26; null=사용자 자신이 발주 고객 포지션), status: draft|planning|active|paused|blocked|completed|archived, repository_provider: local_git|github|gitlab|other, repository_url?/repository_path?(allowlist 검증), default_branch, tech_stack, definition_of_done, quality_policy_id, budget_policy_id, workspace_policy_id, document_policy_id, owner_user_id, project_lead_employee_id?, start_at?/target_end_at?, metadata`.
 
 - 저장소 경로가 workspace root 밖을 가리키지 못하게 하고 symlink 탈출도 검증.
 
@@ -234,7 +235,7 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 `id, actor_type: user|employee|system, actor_id, organization_id, action, resource_type/resource_id, result: success|denied|failure, reason, correlation_id, metadata_redacted, created_at`. 정책 변경·권한 승격·PR 승인/병합·비밀 변경·workspace 실행·배포는 감사. 사용자의 감사 로그 수정/삭제 불가.
 
 ### 5.23 ClarificationSession
-`id, project_id, goal_text(text, 불변, 감사용 원문), session_number(같은 프로젝트 내 순번), status: open|waiting_client|review|frozen|cancelled, opened_by_employee_id, closed_at?, frozen_at?, client_notice_read, client_extra_note(세션마다 제공되는 전문 요구사항 자유 입력란, §28.2), max_questions(기본 5), parent_session_id?`.
+`id, project_id, goal_text(text, 불변, 감사용 원문 — 초기 골 또는 세션 개설 취지/변경 요청 원문), session_number(같은 프로젝트 내 순번), status: open|waiting_client|review|frozen|cancelled, opened_by_employee_id?/opened_by_user_id?(둘 중 하나 — 파이프라인 개설 또는 사용자 개설(§28.6)), client_id?(세션의 발주 고객 주체, §5.26; null=사용자 자신), attachments(JSONB: [{artifact_id, media_type, filename, size_bytes, parse_status}], §28.7), closed_at?, frozen_at?, client_notice_read, client_extra_note(세션마다 제공되는 전문 요구사항 자유 입력란, §28.2), max_questions(기본 5), parent_session_id?`.
 - `open`(협의·구성·검토) → `waiting_client`(**고객 응답 대기 큐에 지속 유지**) → `review`(답변 해석) → `frozen`(불변) / `cancelled`.
 - frozen 이후 수정은 모든 경로에서 409+Audit. 신규 요구는 새 세션(number+1, parent 참조).
 
@@ -244,8 +245,11 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 
 ### 5.25 RequirementSet
 `id, organization_id, project_id, session_id, version, content(JSONB: functional/non_functional/constraints/out_of_scope/open_risks), status: draft|frozen|superseded, frozen_by_employee_ids, derived_task_ids, created_at, frozen_at`.
-- 각 content 항목은 `source: client_declared|client_answered|employee_derived` + 근거(question_id/goal_text/답변 발췌). 고객 자발적 전문 요구는 `client_declared`로 기록해 이후 무시되지 않게 한다(§28.2).
+- 각 content 항목은 `source: client_declared|client_answered|client_relayed|employee_derived` + 근거(question_id/goal_text/답변 발췌/첨부(§28.7: 슬라이드·시트·페이지·이미지)/중계 원문 발췌). 고객·사용자가 자발적으로 제시한 전문 요구는 `client_declared`, 운영자가 유치 고객 의견을 전달한 것은 `client_relayed`로 기록해 이후 무시되지 않게 한다(§28.2).
 - frozen 이후 content 불변; 변경은 새 세션→새 버전(superseded 표시 보존). 프로젝트 내 모든 Task의 요구 근거는 이 기록을 참조한다.
+
+### 5.26 Client(외부 고객)
+`id, organization_id, display_name, contact?(연락 메모), created_by_user_id, status: active|archived, notes`. 조직이 수임하는 외부 고객(사용자가 직접 유치해서 중계하는 대상; §0 원칙 11 중계자 포지션). MVP에서 외부 고객은 로그인·API 접근 권한이 없고(§28.5 확장), 사용자(운영자)가 요구·의견을 그대로 중계한다(`client_relayed`, 원문 보존+감사). 고객 개인 데이터는 요구 수행에 필요한 범위로만 전파(§21). `Project.client_id`·`ClarificationSession.client_id`가 참조한다.
 
 ---
 
@@ -296,7 +300,7 @@ BLOCKED → READY(해소) | CANCELLED
 모든 전이는 TaskTransition/이벤트 기록; 무효 전이는 API 거부. BLOCKED 사유에는 `client_input_required`(명확화 세션 대기) 포함(§28).
 
 ### 7.2 주요 워크플로
-**RequirementDiscoveryWorkflow(§28)**: 골 접수 → 리드가 세션 개설·협의 참석(아키텍트/QA/보안/디자이너) → 1차 분석(모호성·누락·리스크·범위 경계) → "물어보지 않아도 알 수 있는 것 vs 반드시 물어야 하는 것" 분리 → 최소 질문 구성(기능별 개별 체크박스+기타) → 검토 체인 통과 → `waiting_client` 큐 → 고객 접속 시 응답(오프라인이면 큐 유지) → 답변 해석(불명확 시 이례적 후속 질문) → 기록 승인 → 동결(불변 RequirementSet) → 부족하면 새 세션(반복 상한 3회; 초과 시 고객 통지·대기) → 충분하면 §29.
+**RequirementDiscoveryWorkflow(§28)**: 골 접수 → 리드가 세션 개설·협의 참석(아키텍트/QA/보안/디자이너) → 1차 분석(모호성·누락·리스크·범위 경계) → "물어보지 않아도 알 수 있는 것 vs 반드시 물어야 하는 것" 분리 → 최소 질문 구성(기능별 개별 체크박스+기타) → 검토 체인 통과 → `waiting_client` 큐 → 고객 접속 시 응답(오프라인이면 큐 유지) → 답변 해석(불명확 시 후속 질문으로 재확인) → 기록 승인 → 동결(불변 RequirementSet) → 부족하면 새 세션(반복 상한 3회; 초과 시 고객 통지·대기) → 충분하면 §29.
 
 **ProjectBootstrapWorkflow**: 설정 검증 → 저장소 접근 → 모델·예산 확인 → workspace 이미지·테스트 명령 확인 → 초기 분석 → 개요·기술 부채 리포트 → 고객 검토 후 실행.
 
@@ -317,7 +321,7 @@ BLOCKED → READY(해소) | CANCELLED
 Task·프로젝트 정책 로드 → 직원 프로필·직급·권한 로드 → 필요 컨텍스트 수집(**동결 RequirementSet 포함, §28**) → 직급 풀 내 모델 라우팅·예상 비용 → 예산·토큰·위험 검사 → 모델 호출 → 응답 형식 검증 → 도구 호출 시 Tool Broker 권한 확인 → 결과 반환 → 완료 조건 확인 → 산출물·메트릭 저장 → Task 전이 → 필요 시 리뷰어/고객 승인 요청.
 
 ### 8.2 프롬프트 구조
-(1) 시스템 안전 정책·도구 제약 (2) 조직 정책 (3) 직무·직급 프로필 (4) 프로젝트 기술 기준·DoD (5) Task 설명·인수 조건 (6) 관련 코드·문서·결정 (7) 현재 실행 상태·이전 시도 요약.
+(1) 시스템 안전 정책·도구 제약 (2) 조직 정책 (3) 직무·직급 프로필 + 직원 커스텀 지시(§5.4 `custom_instructions`) (4) 프로젝트 기술 기준·DoD (5) Task 설명·인수 조건 (6) 관련 코드·문서·결정 (7) 현재 실행 상태·이전 시도 요약.
 
 저장소 파일·이슈·문서·고객 입력은 신뢰 불가 데이터. 안의 지시("시스템 프롬프트 무시", "비밀 출력")가 정책을 바꾸지 못하게 하고, 도구 권한은 프롬프트가 아니라 코드에서 강제.
 
@@ -364,7 +368,7 @@ timeout/5xx=제한 재시도 / 429=Retry-After 존중·대체·대기 / 인증 �
 
 **브랜치**: 기본 브랜치 보호 / Task별 `work/<task-id>-<slug>` / 가능 시 로컬 저장소 공유되는 worktree, 파일 트리는 분리 / 동시 동일 파일 수정은 소유권·순서 지정 / base SHA 기록, base 큰 변화는 충돌 분석 우선 / 모든 shell은 allowlist 실행기+인자 배열.
 
-**PR 승인 규칙**: 작성자 자기 승인 금지 / 최소 1 독립 리뷰어 / 고위험은 시니어+QA/보암 추가 / 필수 CI 미통과·미실행 merge 불가 / 리뷰 코멘트는 파일·라인·심각도·근거·수정 조건 포함 / 수정 후 이전 승인 정책에 따라 무효화 / merge 후 SHA·테스트를 문서·Task에 연결 / 기본 설정에서 운영 브랜치 직접 push·배포 금지.
+**PR 승인 규칙**: 작성자 자기 승인 금지 / 최소 1 독립 리뷰어 / 고위험은 지정 시니어/아키텍트+추가 QA/보안 검토 / 필수 CI 미통과·미실행 merge 불가 / 리뷰 코멘트는 파일·라인·심각도·근거·수정 조건 포함 / 수정 후 이전 승인 정책에 따라 무효화 / merge 후 SHA·테스트를 문서·Task에 연결 / 기본 설정에서 운영 브랜치 직접 push·배포 금지.
 
 **충돌·계약**: 작업 분해 시 파일 소유·API 계약 먼저 정함; 공통 타입·migration·schema는 별도 Task 또는 통합 담당 소유 / 충돌은 자동 양자 선택 금지, 의미 충돌 분석 후 재테스트.
 
@@ -374,7 +378,7 @@ timeout/5xx=제한 재시도 / 429=Retry-After 존중·대체·대기 / 인증 �
 
 root 아님 / read-only rootfs(가능 시) / 불필요 capabilities 제거 / **Docker socket 마운트 금지** / host network 금지 / 네트워크 none 또는 allowlist / CPU·RAM·PID·디스크·시간 한도 / 홈·SSH 키·클라우드 자격증명 마운트 금지 / secret 최소 범위·시간만 / 종료 후 cleanup·산출물만 보존 / 로그 마스킹.
 
-커널 공유 한계로 강한 격리 필요 시 전용 VM/별도 runner. 초기 로컬은 신뢰 저장소·제한 작업 전제로 경고 표시. VM은 기본 미생성; OS 불가능·커널/GPU 특성·강격리·정책+설정 충족 시에만 capability 요청, 부재 시 `BLOCKED`(직원 임의 VM 생성·자격 사용 금지).
+커널 공유 한계로 강한 격리 필요 시 전용 VM/별도 runner. 초기 로컬은 신뢰 저장소·제한 작업 전제로 경고 표시. VM은 기본 미생성; OS 불가능·커널/GPU 특성·강한 격리·정책+설정 충족 시에만 capability 요청, 부재 시 `BLOCKED`(직원 임의 VM 생성·자격 사용 금지).
 
 ---
 
@@ -435,7 +439,7 @@ root 아님 / read-only rootfs(가능 시) / 불필요 capabilities 제거 / **D
 
 **WAITING_FOR_QUOTA 기록**: provider/model·오류 분류·retry_after_at·fallback 후보·다음 점검·대기 누적·고객 표시 사유. 복구는 scheduler가; 자격 오류 자동 반복 금지·알림.
 
-**로컬 모델**: health check·모델 존재·context·tool_calling 지원 검사; 부족하면 대체 또는 `BLOCKED`; 히스토���, GPU/메모리/속도 한도 정책 준수.
+**로컬 모델**: GPU/메모리/속도 제한이 있어 health check·모델 존재·context·tool_calling 지원을 검사; 필요한 capability 미지원 시 대체 모델 또는 `BLOCKED`; 하드웨어 자원 한도 정책 준수.
 
 ---
 
@@ -445,7 +449,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Organization / Employees**
 - `POST /organizations/template/import` — 요청 `{organizationId, userId}`; §6.2 5직급+§6.1 8인 한 트랜잭션; 중복 409
-- `GET/POST /employees`, `GET/PATCH /employees/{id}`, `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
+- `GET/POST /employees`(POST/PATCH에 `customInstructions` 포함, §5.4), `GET/PATCH /employees/{id}`, `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
 
 **Grades**: `GET/POST /grades`, `GET/PATCH/DELETE /grades/{id}`(직급 CRUD; 삭제 배정 직원 0만), `GET/PUT /grades/{id}/models`(풀+우선순위)
 
@@ -454,12 +458,16 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Projects / Tasks**: `GET/POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`, `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
 
 **Goals / Requirements(§28)**
-- `POST /projects/{project_id}/goal` — `{userId, goalText}` → ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환)
+- `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}]}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환)
+- `POST /projects/{project_id}/clarification-sessions` — **사용자 개설 세션** `{userId, changeNote?(불변 원문), attachments?}` → 새 `session_number`+`parent_session_id` 연결; 같은 프로젝트에 `open|waiting_client` 세션 존재 시 409(§28.6)
+- `POST /clarification-sessions/{id}/cancel` — 개설자(사용자)가 `open|waiting_client` 세션 취소(Audit; frozen 이후 불가)
 - `GET /projects/{project_id}/clarification-sessions` / `GET /clarification-sessions/{id}`
 - `POST /clarification-sessions/{id}/answers` — `{userId, answers:[{questionId, selectedValues, otherText}]}`; 필수 미답 시 409+남은 질문 정보
 - `POST /clarification-sessions/{id}/freeze` — 동결→RequirementSet 생성; frozen은 새 버전만 가능(수정 API 없음; 규칙 §28.6)
 - `GET /projects/{project_id}/requirements` — 누적 기록(버전별)
 - `GET /clients/user/{userId}/pending-sessions` — 고객 접속 시 미답변 세션 목록("질문 수신함"; MVP 알림 대체)
+
+**Clients(§5.26)**: `GET/POST /clients`, `GET/PATCH /clients/{id}`(외부 고객 명부; MVP 로그인 없음, 운영자 중계)
 
 **Orchestration(§29)**: `POST /requirements/{requirement_set_id}/trigger`(동결 기록 기반 분해 개시; 동결 직후 자동 트리거도 존재), `GET /projects/{project_id}/orchestration`(단계·Epic/Story/Task·배정 요약)
 
@@ -472,7 +480,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask. REQ-001 이후 **골 입력 탭+명확화 세션 탭(개별 체크박스·기타 자유 텍스트)** 추가, 세션 큐가 대시보드 상단 강조. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask. REQ 이후 **골 입력 탭(텍스트+첨부 업로드)+명확화 세션 탭(개별 체크박스·기타 자유 텍스트·사용자 세션 개설·취소)** 추가, 세션 큐가 대시보드 상단 강조. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 
@@ -504,7 +512,7 @@ auto-company/
 - **Phase 2 — Model adapter·비용 원장**: 어댑터 최소 2종(실제 1+mock), health·timeout·usage parsing, 풀·BudgetPolicy·Ledger, 미상 가격 제한. 기준: provider 교체 시 도메인 무변경, 호출별 기록, 실패·인증 구분.
 - **Phase 2.5 — Flyway 스키마(앞당김)**: 베이스라인·migration 재현, enum CHECK 제약 안전 반영(이전 employees_role_check 수동변경 해소). 기준: 빈 VM DB 재현 가능, enum 변경 안전.
 - **Phase 3 — Task workflow·Agent Runtime**: 상태 머신, lease·retry·pause/resume, context builder, structured output, tool dispatch, 횟수·시간·비용 한도, quota 대기. 기준: kill 후 복구, 무한 루프 없음, 중복 완료 없음.
-- **Phase 3A — 명확화 파이프라인(REQ-001~003)**: §5.23~25 엔티티·전이, 골 접수 API+협의 개설(Mock), 질문 구성기(개별 체크박스·기타·한도), 검토 체인+동결 불변성, waiting_client 큐+접속 표시. 기준: 질문이 체인 통과 후 표시 / 오프라인 큐 유지 / 동결 후 수정 차단+감사 / 새 세션 진화.
+- **Phase 3A — 명확화 파이프라인(REQ-001~005)**: §5.23~26 엔티티·전이, 골 접수 API(텍스트+첨부 §28.7)+협의 개설(Mock), 질문 구성기(개별 체크박스·기타·한도), 검토 체인+동결 불변성, waiting_client 큐+접속 표시, **사용자 개설 세션·취소(REQ-005), Client 중계(§5.26)**. 기준: 질문이 체인 통과 후 표시 / 오프라인 큐 유지 / 동결 후 수정 차단+감사 / 새 세션 진화(파이프라인·사용자 양쪽).
 - **Phase 3B — 자율 오케스트레이션(ORCH-001~002)**: 동결 기록→분해(Mock), task_types 기반 자동 배정, 재계획·에스컬레이션. 기준: 골만으로 분해·배정 진행, 부족 시 새 세션, 모든 결정 근거 기록.
 - **Phase 4 — Workspace·Git**: repository allowlist, branch/worktree, Docker provisioning, 한도, diff·test artifact, cleanup, PR 상태. 기준: 두 직원 독립 변경, 비밀 접근 없음, 정리+감사.
 - **Phase 5 — 품질 게이트·리뷰 루프**: command template, unit/lint/type/build, Review entity, 자기승인 방지, 재실행, merge policy. 기준: 테스트 실패는 승인 상태여도 merge 불가, SHA 변경 검증 무효, 수정 요청→Task 상태 연결.
@@ -516,9 +524,9 @@ auto-company/
 
 ## 20. 테스트 전략
 
-**Unit**: 상태 머신 전이 허/금지, 권한 allow/deny, 비용 계산·reservation, 라우팅·fallback, 자기승인 차단, 의존성 순환 탐지, path traversal·symlink, prompt/result schema, **질문 검증(유형별)·체인 전이·동결 불변성**(REQ).
+**Unit**: 상태 머신 전이 허/금지, 권한 allow/deny, 비용 계산·reservation, 라우팅·fallback, 자기승인 차단, 의존성 순환 탐지, path traversal·symlink, prompt/result schema, **질문 검증(유형별)·체인 전이·동결 불변성**(REQ), **첨부 파서 등급 분기·unsupported·이미지/vision 조건**(REQ-004), **세션 개설 경합(409)·취소 규칙**(REQ-005).
 
-**Integration**: PostgreSQL migration·repository, worker kill/lease 회수, provider mock·timeout·rate limit, Docker workspace 수명, Git branch/diff/merge conflict, 테스트 실패→수정→재검증, quota wait→resume, audit 생성, **명확화 세션 전체(골→질문→응답→동결→새 세션)**.
+**Integration**: PostgreSQL migration·repository, worker kill/lease 회수, provider mock·timeout·rate limit, Docker workspace 수명, Git branch/diff/merge conflict, 테스트 실패→수정→재검증, quota wait→resume, audit 생성, **명확화 세션 전체(골→질문→응답→동결→새 세션)**, **사용자 개설 세션→동결→RequirementSet 버전 승계**.
 
 **E2E**: 기본 템플릿 생성 → 저장소 등록 → (골 제출→명확화→동결) → 분해·배정(Mock) → 격리 workspace 변경 → 테스트 실행 → PR/리뷰 → 수정 재실행 → 게이트 통과 → 문서 갱신·비용 확인 → 완료 리포트.
 
@@ -528,9 +536,9 @@ auto-company/
 
 ## 21. 보안·위협
 
-위협: prompt injection 포함 저장소 파일 / 잘못된 모델 출력 / 의도치 않은 shell / 키 노출 / workspace 통한 호스트 접근 / 무단 네트워크 / PR·merge 남용 / 비용 고갈 / 평가 담합·편향 / 손상·오래된 문서 / **고객 데이터 오취·질문 과다 전달**
+위협: prompt injection 포함 저장소 파일 / 잘못된 모델 출력 / 의도치 않은 shell / 키 노출 / workspace 통한 호스트 접근 / 무단 네트워크 / PR·merge 남용 / 비용 고갈 / 평가 담합·편향 / 손상·오래된 문서 / **고객 데이터 유출·질문 과다(고객 부담)·중계 기록 오염** / **첨부 해석 오류·악성 콘텐츠(§28.7)**
 
-방어: RBAC·서버 권한 / allowlist 경로·명령 / 컨테이너 한도·별도 runner / secret redaction·store / egress 제한 / budget·token·시간 hard limit / 승인 분리·감사 / 사용자 텍스트=데이터 취급 / 의존성·이미지 갱신 절차 / 백업 암호화·복구 테스트 / 기본 운영 서버·외부 고객 데이터 접근 금지 / **고객 질문·세션·기록 접근 권한 별도 검증**
+방어: RBAC·서버 권한 /allowlist 경로·명령 / 컨테이너 한도·별도 runner / secret redaction·store / egress 제한 / budget·token·시간 hard limit / 승인 분리·감사 / 사용자 텍스트·첨부=데이터 취급 / 첨부는 정적 저장만·실행 금지(§28.7) / 의존성·이미지 갱신 절차 / 백업 암호화·복구 테스트 / 기본 운영 서버·외부 고객 데이터 접근 금지 / **고객 질문·세션·기록 접근 권한 별도 검증 / 중계 원문 보존+감사**
 
 로컬이어도 웹 UI를 외부 네트워크 공개 금지; 원격 활성시 인증·TLS·방화벽·secret 관리·업데이트 정책 별도 구성.
 
@@ -600,7 +608,12 @@ clarification:
   review_chain_roles: [PLANNER, ARCHITECT, QA_ENGINEER, SECURITY_DEVOPS, PROJECT_MANAGER]
   allow_other_by_default: true
   max_sessions_per_goal: 3              # 초과 시 운영자 개입 기록
-  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note]
+  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note, goal_attachments, relayed_note]
+  allow_user_opened_sessions: true      # 동시 open|waiting_client 1개; 초과 409
+  attachments: { max_count_per_goal: 10, max_file_size_mb: 50, native_formats: [md, txt, csv, json, pdf], parser_formats: [xlsx, pptx, docx, hwp], image_requires_vision: true }
+employees:
+  custom_instructions_enabled: true
+  custom_instructions_max_chars: 4000
 orchestrator: { auto_assignment: true, replan_attempts_per_requirement_set: 2 }
 documents: { require_evidence_refs: true, mark_stale_on_code_change: true, default_search_mode: full_text }
 ```
@@ -611,13 +624,13 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 ## 24. MVP 인수 기준
 
-1. 문서대로 로컬 Compose 설치 성공. 2. 최초 관리자+기본 조직 템플릿 생성. 3. 직무·직급·모델 풀 독립 설정; 직급 있다면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만).**
+1. 문서대로 로컬 Compose 설치 성공. 2. 최초 관리자+기본 조직 템플릿 생성. 3. 직무·직급·모델 풀 독립 설정; 배정 직원이 있으면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골(텍스트+첨부)→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만; 사용자가 자발적으로 전문 요구를 제시한 경우 예외 — client_declared 수용).** 23. **첨부 접수: Artifact 보존+추출 근거 기록; 파싱 불가 유형은 원본 보존+텍스트 보강 요청(§28.7).** 24. **직원 custom_instructions가 AgentRun 컨텍스트에 포함(§8.2).** 25. **사용자 개설 세션→동결→새 RequirementSet 버전 승계; 동시 세션 2개 409(§28.6).** 26. **외부 고객 중계: Client 등록, 원문 보존+`client_relayed` 표시+감사(§5.26).**
 
 ---
 
 ## 25. 결정 사항 요약(규범)
 
-1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자=외주 고객; 요구만 제출·응답, 기술 결정은 내부 처리.** 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전.** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.**
+1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자는 다중 포지션**: 운영자(조직·직급·모델 풀·직원 개별 지시 구성 권한 — 이미 구현), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 제시한 기술·디자인 지시는 `client_declared` 제약 수용), 외부 고객 중계자. 전문성 고정 단정 금지 — 신호 기반 적응(§28.2); 기술 결정 기본은 내부 처리. 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전 — 파이프라인과 사용자 양쪽에서 새 세션 개설 가능(§28.6).** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.** 25. **골 입력은 텍스트+파일·이미지 첨부; 지원 불가·파싱 실패 유형은 원본 보존+텍스트 보강 요청, 첨부 근거는 요구 항목에 기록(§28.7).** 26. **직원 `custom_instructions`(사용자 작성 개별 지시, AGENTS.md류)는 모든 AgentRun 컨텍스트에 주입된다; 시스템 안전 정책이 우선(§8.2).** 27. **외부 고객은 자체 로그인 없이 운영자가 중계한다; 원문 보존·감사·`client_relayed` 표시(§5.26).**
 
 ---
 
@@ -638,6 +651,8 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 각 티켓: `acceptance_criteria`·의존·테스트 계획·담당·리뷰어 필수(AI 구현 동일 적용).
 
+**사용자·입력 확장(v1.6)**: 34. `ORG-003` Client 중계 고객(§5.26)+Project/세션 연결+중계 감사. 35. `EMP-001` 직원 커스텀 지시(`custom_instructions` 필드·CRUD·컨텍스트 주입). 36. `REQ-004` 다중 모달 골 접수(첨부 Artifact 저장·파서 등급·vision 조건·추출 근거). 37. `REQ-005` 사용자 개설 세션·취소 API(개설 취지 원문·동시 세션 409·진화 승계).
+
 사용량 제한 우선순위: (1) 실 usage 기록·정산 정확화 → (2) BudgetPolicy 조회+호출 전 원자적 예약 → (3) 비용·토큰·요청 기간 집계(rolling 경계 포함) → (4) `WAITING_FOR_QUOTA`·retry_after_at 저장+재개 조건만 scheduler 재시도 → (5) 경고·잔여 UI+grant. 테스트: 동시 예약 경쟁(잔여 초과), timeout 과금 불명, 월 경계·시간대, rolling 경계, fallback 자체 한도 초과.
 
 ---
@@ -646,14 +661,14 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 중심은 "AI 직원 여러 명"이 아니라: 지속 직원·조직 모델+사용자 정의 직급·모델 풀 / 재개 가능 워크플로 / 교체 가능 다중 모델 런타임 / 격리 개발환경 / Git 기반 변경 관리 / 독립 품질 게이트 / 근거 기반 평가·문서 지식 / 예산·권한·시간 강제의 조합이다. 이 구조로 로컬에서 시작해 이후 분산·VM으로 확장해도 핵심 도메인 유지.
 
-**최우선 수직 기능**: “고객이 단일 프롬프트로 요구사항을 말하면, AI 직원들이 내부 협의 후 최소한의 구조화된 질문을 통해 요구사항을 확정하고, 이를 불변 기록으로 동결한 뒤, 스스로 작업을 분해·배정해 격리된 Docker 환경에서 구현하고 테스트와 리뷰를 거쳐 고객에게 결과 리포트를 전달하는 것.” 이 흐름이 안정된 뒤 회의·평가·자율 유지보수를 확장한다.
+**최우선 수직 기능**: “발주 고객(사용자 또는 중계된 외부 고객)이 프롬프트와 요구 문서·디자인 첨부로 요구사항을 말하면, AI 직원들이 내부 협의 후 최소한의 구조화된 질문을 통해 요구사항을 확정하고, 이를 불변 기록으로 동결한 뒤, 스스로 작업을 분해·배정해 격리된 Docker 환경에서 구현하고 테스트와 리뷰를 거쳐 결과 리포트를 전달한다. 요구가 바뀌면 고객이나 직원들이 새 세션을 열어 같은 절차로 진화시킨다.” 이 흐름이 안정된 뒤 회의·평가·자율 유지보수를 확장한다.
 
 ---
 
 ## 28. 요구사항 명확화 파이프라인
 
 ### 28.1 배경과 포지션
-사용자는 **외주 고객**이다. 고객은 "블로그 사이트 만들어줘" 같은 단일 프롬프트로 요청하고, 기획·설계·구현·검증 방법은 직원들 내부 협의로 정한다. 문제는 **고객이 항상 온라인이 아니다**라는 점 — 웹은 실시간 푸시가 어렵고, 잦은 알림은 고객 경험을 해친다. 따라서:
+골을 제출하는 쪽은 **발주 고객 포지션**(§0 원칙 11)이다 — 사용자 자신이거나, 운영자가 유치해 중계하는 외부 고객(§5.26)이다. 고객은 "블로그 사이트 만들어줘" 같은 텍스트 프롬프트와 전문 자료 첨부(§28.7)로 요청하고, 기획·설계·구현·검증 방법은 직원들 내부 협의로 정한다. 문제는 **고객이 항상 온라인이 아니다**라는 점 — 웹은 실시간 푸시가 어렵고, 잦은 알림은 고객 경험을 해친다. 따라서:
 1. 직원들 협의로 스스로 해결할 수 있는 것은 최대한 내부에서 진행.
 2. 반드시 고객 입력이 필요한 지점만 **최소 구조화 질문**으로 추림.
 3. 질문은 세션 큐에 쌓이고, 고객이 접속 시 확인·응답.
@@ -665,12 +680,12 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 **미포함**: 기술 스택 / 아키텍처 방식 / 구현·검증 방법 / 내부 팀 사정(모델·예산·배정).
 
-**"묻지 않는다"≠"받지 않는다" — 고객 자발적 전문 요구 수용**:
-1. **전문성 신호 판정**: goal_text·답변 기타·client_extra_note에서 전문적 내용(예: "Spring Boot + PostgreSQL", "개인정보 암호화 필수")을 감지하면 통째로 "전문가" 단정이 아니라 **주제별 신호**(기술 스택에 지식, 보안 관심 등)로 세분 기록.
-2. **제약으로 수용**: 신호 내용은 명시적 제약(`RequirementSet`에 `source=client_declared`)으로 기록. 암묵적 재평가·무시 금지. 이미 결정을 제시한 영역을 되묻지 않는다(면제; 필요 시 더 좁은 후속 질문만).
+**"묻지 않는다"≠"받지 않는다" — 자발적 전문 요구 수용**:
+1. **전문성 신호 판정**: goal_text·답변 기타·client_extra_note·골 첨부(§28.7)·중계 의견에서 전문적 내용(예: "Spring Boot + PostgreSQL", "검은색 계열 시안 첨부", "개인정보 암호화 필수")을 감지하면 통째로 "전문가" 단정이 아니라 **도메인별 신호**(기술 스택·보안·디자인·UX·기획 등)로 세분 기록. 사용자가 디자이너이거나 외부 고객이 시안·기술 문서를 먼저 제시하면 해당 영역 질문은 면제·간략화.
+2. **제약으로 수용**: 신호 내용은 명시적 제약(`RequirementSet`에 `source=client_declared`·중계는 `client_relayed`)으로 기록. 암묵적 재평가·무시 금지. 이미 결정을 제시한 영역을 되묻지 않는다(면제; 필요 시 더 좁은 후속 질문만). 운영자의 기술 조언자 포지션 지시도 동일 취급(Decision 기록+내부 검토 후 수용).
 3. **충돌 시 침묵 금지**: 안전·법률·품질 바닥선과 충돌하거나 모순되면 임의 진행 없이, 충돌을 **제품 수준 문구**(기술 대안 강요가 아닌 결과 차이·위험·일정 설명)로 담은 후속 질문 하나로 확인(체인 통과).
 4. **항상 열려 있는 기입란**: waiting_client 세션마다 “전문적인 요구사항이 있으면 추가로 작성해주세요” 문구+자유 입력란 고정 표시(`client_extra_note`). 비워두면 효과 없음.
-5. **원천**: goal_text / 답변 기타 / client_extra_note 의 3곳, 모두 `client_declared`로 일관 기록.
+5. **원천**: goal_text / 답변 기타 / client_extra_note / 골 첨부 자료(§28.7) / 운영자 중계 의견 — `client_declared`(중계는 `client_relayed`)로 일관 기록.
 
 ### 28.3 질문 포맷: 최소 질문으로 최대 의도
 한 질문마다 다양한 응답을 한 번에 얻도록 구성하되, 세션당 `max_questions`(기본 5) 상한. 질문 하나에 서로 다른 정보 섞지 않기.
@@ -702,9 +717,9 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 질문은 체인 통과 후에만 `waiting_client`로 전달. 그 역할 기반 순차 체인:
 
 ```
-[0단계: 고객 전문성 신호 선식별]
-  goal_text + client_extra_note + 기타 자유 텍스트 분류.
-  이미 결정·제약 제시한 영역은 질문에서 빼거나 간략화,
+[0단계: 고객·사용자 전문성 신호 선식별]
+  goal_text + client_extra_note + 기타 자유 텍스트 + 골 첨부 요약(§28.7) + 중계 기록 분류.
+  이미 결정·제약 제시한 영역(기술·디자인·보안 등)은 질문에서 빼거나 간략화,
   사유(면제/간략화, 근거 문장) 협의 기록. 남은 불확실 영역만 질문화.
 [1] PLANNER/L4 (프로젝트 리드) 최초 작성
 [2] ARCHITECT/L5 — "응답이 작업 범위·복잡도로 이어지는가? 기술 성격 과노출 아닌가?"
@@ -716,25 +731,34 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 통과 못한 질문은 다시 협의 회의(§13)로. 체인 순서는 구현 상수; 없는 역할은 건너뛰고 감사 기록. 고객 제시 전문 요구가 바닥선 충돌(§28.2.3)도 체인에서 처리 — 임의 진행 없이 제품 수준 후속 질문을 같은 체인에 통과.
 
 ### 28.5 오프라인 고객 지원·세션 관리
-세션 라이프사이클 `open → waiting_client → review → frozen` / 접속 시 `waiting_client` 목록 상단 표시, `GET /clients/user/{userId}/pending-sessions` / **MVP 푸시 없음** — 앱 전환 시 푸시+만료·요약 규칙 추가 / 장기 무응답: `assumption_if_skipped` 근거로 진행 여부를 체인이 판단 기록. 고객 원문(goal_text)은 항상 보존되므로, 이후 정정 요청 시 새 세션으로 대응.
+세션 라이프사이클 `open → waiting_client → review → frozen` / 접속 시 `waiting_client` 목록 상단 표시, `GET /clients/user/{userId}/pending-sessions` / **MVP 푸시 없음** — 앱 전환 시 푸시+만료·요약 규칙 추가 / 장기 무응답: `assumption_if_skipped` 근거로 진행 여부를 체인이 판단 기록. 고객 원문(goal_text)은 항상 보존되므로, 이후 정정 요청 시 새 세션으로 대응. 세션은 파이프라인 개설(`opened_by_employee_id`)과 사용자 개설(`opened_by_user_id`, §28.6) 양쪽이며, 개설자는 자기 세션을 `open|waiting_client` 동안 취소할 수 있다(Audit).
 
-### 28.6 동결(Freeze)과 불변
-**동결 시점**: 고객 필수 질문 답 완료+체인이 기록 승인 / 또는 고객 명시 지시("이 정도면 진행").
+### 28.6 동결(Freeze)·불변·진화
+**동결 시점**: 고객 필수 질문 답 완료+체인이 기록 승인 / 또는 고객 명시 지시("이 정도면 진행") / 또는 **사용자 개설 세션에서 변경 내용이 이미 충분히 구체적**(질문 0개 경로: 체인은 기록 승인만 수행).
 동결 즉시 `frozen`+RequirementSet 생성(불변). 이후:
 - 질문·답변·기록 수정 API 차단(409+Audit)
-- 변경·추가는 **새 세션**(`session_number+1`)으로만 진화
-- 기록 달라지면 새 RequirementSet 버전 추가, 이전은 `superseded` 표시 보존(감사·회귀 분석 자료).
+- **요구는 살아있다 — 진화는 두 가지 출발점이 있다**: (a) 직원들이 새 요구·변경 필요를 감지하면 파이프라인이 새 세션 개설, (b) **사용자가 직접 새 세션을 개설**(`POST /projects/{id}/clarification-sessions`, §17; 텍스트 취지 노트+첨부, §28.7 입력과 동일). 새 세션은 `session_number+1`·`parent_session_id` 연결.
+- 동시 진행 세션은 프로젝트당 1개(`open|waiting_client` 존재 시 개설 409 — 기존 세션 응답·취소 후 재시도; 취소는 개설자만, Audit)
+- 기록이 달라지면 새 RequirementSet 버전 추가, 이전은 `superseded` 표시 보존(감사·회귀 분석 자료). 새 버전 동결 시 진행 중 오케스트레이션은 §29의 재계획 규칙 따름.
+
+### 28.7 다중 모달 골 접수(텍스트+파일·이미지)
+골·변경 요청 입력은 텍스트 단독이 아니라 첨부와 함께 온다: 요구 문서(PPT/PPTX·XLSX·HWP·PDF·MD/TXT/CSV), **디자인 자료(이미지 PNG/JPG/SVG, 와이어프레임·시안)**, 기타 참고 파일. 규칙:
+1. **입력**: 초기 골(`POST /projects/{id}/goal`)과 사용자 개설 세션(§28.6) 모두 `{goalText?, attachments?}` 형태. 둘 다 비면 400.
+2. **저장**: 첨부는 각각 `Artifact`(`artifact_type: document|image`)로 저장하고 `ClarificationSession.attachments`에 참조를 남긴다(`parse_status: parsed|unsupported|image_pending_vision`).
+3. **형식 등급**: `native`(MD/TXT/CSV/JSON·PDF 텍스트 레이어)=자체 파서 / `parser`(XLSX·PPTX·DOCX·HWP)=형식별 파서 모듈, HWP는 best-effort / `image`=vision capability가 있는 모델 profile(§5.8) 배정 시에만 내용 해석. 지원 불가·파싱 실패는 **파일 원본 보존**+`unsupported` 기록+세션에 "파일 내용을 텍스트로 보강해주세요" 후속 요구 질문 추가(첨부+텍스트 병행 안내).
+4. **추출과 근거**: 파서/모델이 뽑은 후보 요구는 0단계 선식별(§28.4)에 합류, 항목 근거에 첨부+슬라이드/시트/페이지/이미지 참조를 남긴다. 고객·사용자가 직접 제공한 자료의 명시적 기재는 `client_declared`, 직원이 해석·추론한 것은 `employee_derived`(§5.25). 파일이 질문을 대체하지 않는다 — 추출 누락·오해는 명확화 질문으로 교정.
+5. **보안·한도**: 첨부는 정적 저장만, 실행 금지(스크립트·압축 포함); 첨부 내부 텍스트는 신뢰 불가 데이터 취급(§8.2) — 안의 지시가 정책을 바꾸지 못한다; 고객 데이터 접근 규칙(§21) 적용. 세션당 첨부 수와 용량 한도는 §23 설정(기본 10개/50MB), 초과 400.
 
 ---
 
 ## 29. 자율 오케스트레이션
 
 ### 29.1 원칙
-고객이 직원마다 일일이 할당하지 않는다. 분해·배정·실행·재계획을 Orchestrator가 수행. 근거는 동결 RequirementSet뿐 — 근거 없는 기능 작업 생성 없음. 한도(라운드·예산·시간·재시도·격리·주요 승인)는 §13/§16/§21 정책 동일 유지.
+발주 고객(사용자 또는 중계 고객)이 직원마다 일일이 할당하지 않는다. 분해·배정·실행·재계획을 Orchestrator가 수행. 근거는 동결 RequirementSet뿐 — 근거 없는 기능 작업 생성 없음. 요구 진화(사용자 개설 세션 포함, §28.6)가 이어져도 이 원칙은 유지된다. 한도(라운드·예산·시간·재시도·격리·주요 승인)는 §13/§16/§21 정책 동일 유지.
 
 ### 29.2 사이클
 ```
-[고객 골 접수] → [명확화 진행·동결(§28)]
+[발주 고객 골 접수(텍스트+첨부 §28.7, 또는 사용자 개설 세션 §28.6)] → [명확화 진행·동결(§28)]
   → [PLANNER 작업 분석]
   → [분해: Epic/Story/Task 트리+의존성]
       (기존 Task/JPA parent_task_id·TaskDependency 재사용)
@@ -743,8 +767,10 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
   → [실행: AgentRun 기반]
   → [리뷰·품질 게이트(§12, §10)]
   → [확정: 결과 요약+산출물 위험 평가 리포트를 고객에]
-  → (요구 반영 불가·새 요구 발견 → 새 명확화 세션 개시)
+  → (요구 반영 불가·새 요구 발견 → 새 명확화 세션 개시; 파이프라인 개설)
 ```
+
+**새 RequirementSet 버전이 승계되면**: 이전 버전 기반 Task 중 미시작은 재계획(분해·배정 갱신), 진행 중·완료는 유지하되 새 요구와의 충돌·영향을 재계획 리포트에 기록(감사). `replan_attempts` 한도 내(§23).
 
 ### 29.3 배정 정책
 TaskType→직급 `task_types` 매칭 우선; 배정 실패 시 `BLOCKED`+사용자 조치 사유 기록. 배정 이력은 WorkflowRun 기록되므로, 이후 조직 변경(직급 재편·인원 변동) 시 영향 분석 가능.
