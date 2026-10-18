@@ -337,4 +337,47 @@ public class EmployeeIntegrationTest {
                 .content("{\"organizationId\":\"" + organizationId + "\",\"userId\":\"" + userId + "\"}"))
                 .andExpect(status().isConflict());
     }
+
+    // ==================== ORG-003 중계 프로젝트 매핑 (§5.26) ====================
+
+    @Test
+    public void testCreateRelayProjectReturns201() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        com.autocompany.entity.Project project = com.autocompany.entity.Project.builder()
+                .name("중계 프로젝트").clientId(clientId).build();
+        project.setId(UUID.randomUUID());
+        when(projectService.createProject(eq(userId), anyString(), any(), eq(clientId))).thenReturn(project);
+
+        mockMvc.perform(post("/api/v1/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + userId + "\",\"name\":\"중계 프로젝트\",\"clientId\":\"" + clientId + "\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    public void testCreateProjectWithArchivedClientReturns409() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        when(projectService.createProject(eq(userId), anyString(), any(), eq(clientId)))
+                .thenThrow(new IllegalStateException("Archived client cannot be used for new relays (§5.26: 409)"));
+
+        mockMvc.perform(post("/api/v1/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + userId + "\",\"name\":\"중계 프로젝트\",\"clientId\":\"" + clientId + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    public void testCreateProjectWithUnknownClientReturns404() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        when(projectService.createProject(eq(userId), anyString(), any(), eq(clientId)))
+                .thenThrow(new java.util.NoSuchElementException("Client not found: " + clientId));
+
+        mockMvc.perform(post("/api/v1/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + userId + "\",\"name\":\"중계 프로젝트\",\"clientId\":\"" + clientId + "\"}"))
+                .andExpect(status().isNotFound());
+    }
 }

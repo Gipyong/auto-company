@@ -186,6 +186,18 @@
   <!-- ===== 고객 골 (§28 명확화 파이프라인) ===== -->
   <section class="tabpage" id="tab-goal">
     <div class="card">
+      <h2>외부 고객 (중계, §5.26)</h2>
+      <p class="hint">운영자가 외부 고객을 등록하고 골·세션을 중계합니다. 아카이브된 고객은 신규 중계 연결에 사용할 수 없습니다(기존 기록은 보존).</p>
+      <label for="clientName">표시 이름</label>
+      <input id="clientName" autocomplete="off">
+      <label for="clientContact">연락처 (선택)</label>
+      <input id="clientContact" autocomplete="off">
+      <button id="btnClientSave" class="btn primary">고객 등록</button>
+      <div id="clientResult" class="status"></div>
+      <div class="list" id="clientList"></div>
+    </div>
+
+    <div class="card">
       <div class="row between">
         <h2>세션 수신함 <span class="badge hot" id="inboxCount" hidden>0</span></h2>
         <button id="btnInboxRefresh" class="btn ghost small">새로고침</button>
@@ -199,6 +211,8 @@
       <p class="hint">텍스트와 첨부 중 최소 한 가지는 필요합니다(§28.7-1). 예: 회원가입·로그인 등 기능 목록 기술.</p>
       <label for="goalProject">프로젝트</label>
       <select id="goalProject"></select>
+      <label for="goalClient">외부 고객 중계 (선택 — 미선택 시 프로젝트 고객 상속)</label>
+      <select id="goalClient"></select>
       <label for="goalText">골 텍스트 (첨부 단독 접수 시 비워도 됩니다)</label>
       <textarea id="goalText" rows="3"></textarea>
       <label for="goalFiles">첨부 파일 (text 기반 md·txt·csv·json은 내용 파싱, 그 외 형식은 원본 보존) — 최대 10개·파일당 50MB</label>
@@ -218,6 +232,8 @@
 
       <h3>새 세션 개설 (진화, §28.6)</h3>
       <p class="hint">변경 요청 원문 또는 첨부로 새 세션을 개설합니다. 세션 번호가 오르고 이전 세션과 연결됩니다.</p>
+      <label for="evoClient">외부 고객 중계 (선택 — 미선택 시 프로젝트 고객 상속)</label>
+      <select id="evoClient"></select>
       <label for="evoNote">변경 요청 원문 (첨부 단독 개설 시 비워도 됩니다)</label>
       <textarea id="evoNote" rows="2"></textarea>
       <label for="evoFiles">첨부 (선택) — 최대 10개·파일당 50MB</label>
@@ -252,6 +268,8 @@
       <input id="projName" autocomplete="off">
       <label for="projDesc">설명</label>
       <input id="projDesc" autocomplete="off">
+      <label for="projClient">외부 고객 (선택 — 프로젝트 소속 중계 고객)</label>
+      <select id="projClient"></select>
       <button id="btnProjSave" class="btn primary">프로젝트 생성</button>
       <div class="list" id="projectList"></div>
     </div>

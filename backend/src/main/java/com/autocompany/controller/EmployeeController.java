@@ -41,6 +41,22 @@ public class EmployeeController {
         return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
     }
 
+    // §5.26 중계 연결 검증 — archived 클라이언트 등 상태 충돌 409
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(IllegalStateException e) {
+        return ResponseEntity.status(409).body(Map.of("error_code", "STATE_CONFLICT", "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
+        return ResponseEntity.status(400).body(Map.of("error_code", "INVALID_REQUEST", "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(java.util.NoSuchElementException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(java.util.NoSuchElementException e) {
+        return ResponseEntity.status(404).body(Map.of("error_code", "NOT_FOUND", "message", e.getMessage()));
+    }
+
     // ==================== Employee ====================
     
     // 직원 채용
@@ -165,7 +181,8 @@ public class EmployeeController {
     
     @PostMapping("/projects")
     public ResponseEntity<Project> createProject(@RequestBody ProjectRequest request) {
-        Project project = projectService.createProject(request.userId, request.name, request.description);
+        Project project = projectService.createProject(request.userId, request.name,
+                request.description, request.clientId);
         return ResponseEntity.status(201).body(project);
     }
 
@@ -237,6 +254,7 @@ public class EmployeeController {
         public UUID userId;
         public String name;
         public String description;
+        public UUID clientId; // §5.26 외부 고객 중계 프로젝트(선택)
     }
 
     public static class TaskRequest {

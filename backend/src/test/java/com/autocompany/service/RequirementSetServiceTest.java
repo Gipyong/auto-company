@@ -3,10 +3,12 @@ package com.autocompany.service;
 import com.autocompany.entity.ClarificationQuestion;
 import com.autocompany.entity.ClarificationQuestion.QuestionType;
 import com.autocompany.entity.ClarificationSession;
+import com.autocompany.entity.Client;
 import com.autocompany.entity.Project;
 import com.autocompany.entity.RequirementSet;
 import com.autocompany.entity.User;
 import com.autocompany.repository.ArtifactRepository;
+import com.autocompany.repository.ClientRepository;
 import com.autocompany.repository.ClarificationQuestionRepository;
 import com.autocompany.repository.ClarificationSessionRepository;
 import com.autocompany.repository.DiscussionMessageRepository;
@@ -25,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 /**
  * REQ-003 동결 단위 테스트(§5.25, §28.6).
@@ -41,6 +45,7 @@ public class RequirementSetServiceTest {
     private ArtifactRepository artifactRepository;
     private ClarificationExpertSignalDetector signalDetector;
     private ClarificationReviewChainService reviewChainService;
+    private ClientRepository clientRepository;
     private RequirementSetService service;
 
     private UUID sessionId;
@@ -58,9 +63,10 @@ public class RequirementSetServiceTest {
         artifactRepository = mock(ArtifactRepository.class);
         signalDetector = new ClarificationExpertSignalDetector();
         reviewChainService = mock(ClarificationReviewChainService.class);
+        clientRepository = mock(ClientRepository.class);
         service = new RequirementSetService(requirementSetRepository, sessionRepository,
                 questionRepository, discussionMessageRepository, signalDetector, objectMapper, artifactRepository,
-                reviewChainService);
+                reviewChainService, clientRepository);
 
         sessionId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -329,5 +335,49 @@ public class RequirementSetServiceTest {
         assertEquals(RequirementSet.SetStatus.FROZEN, outcome.set().getStatus());
         assertTrue(outcome.content().openRisks().stream()
                 .anyMatch(i -> i.detail().contains("이 정도면 진행")));
+    }
+
+    // ==================== ORG-003 외부 고객 중계(§5.26) ====================
+
+    @Test
+    void freezeRelaySessionRecordsClientRelayedSourcesWithEvidence() {
+        UUID clientId = UUID.randomUUID();
+        session.setClientId(clientId);
+        session.setGoalText("개인정보 보호가 필요한 상품 페이지 확장");
+        Client client = Client.builder().organizationId(UUID.randomUUID()).displayName("대박커머스").build();
+        client.setId(clientId);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId))
+                .thenReturn(List.of(q(1, QuestionType.SINGLE_CHOICE, List.of("mvp"), null)));
+        ArgumentCaptor<com.autocompany.entity.DiscussionMessage> msgCaptor =
+                ArgumentCaptor.forClass(com.autocompany.entity.DiscussionMessage.class);
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId);
+
+        // 고객 원천 항목은 client_relayed + "외부 고객 {이름} 중계 — " 근거(§5.26)
+        RequirementSetService.RequirementItem goal = outcome.content().functional().get(0);
+        assertEquals("client_relayed", goal.source());
+        assertTrue(goal.evidence().contains("대박커머스 중계"));
+        RequirementSetService.RequirementItem scope = outcome.content().functional().get(1);
+        assertEquals("client_relayed", scope.source());
+        assertTrue(scope.evidence().contains("대박커머스 중계"));
+        // 신호 항목도 중계 출처 유지
+        assertTrue(outcome.content().nonFunctional().stream()
+                .anyMatch(i -> "client_relayed".equals(i.source()) && i.evidence().contains("대박커머스 중계")));
+        // 동결 감사 로그 — 중계 기록·원문 보존 명시
+        verify(discussionMessageRepository).save(msgCaptor.capture());
+        assertTrue(msgCaptor.getValue().getContent().contains("대박커머스 중계 기록(client_relayed)"));
+    }
+
+    @Test
+    void freezeNonRelaySessionKeepsClientDeclaredSources() {
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId))
+                .thenReturn(List.of(q(1, QuestionType.SINGLE_CHOICE, List.of("mvp"), null)));
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId);
+
+        // client_id 없는 기존 세션은 기존 출처 표기 유지(회귀 방지)
+        assertEquals("client_declared", outcome.content().functional().get(0).source());
+        assertEquals("client_answered", outcome.content().functional().get(1).source());
     }
 }
