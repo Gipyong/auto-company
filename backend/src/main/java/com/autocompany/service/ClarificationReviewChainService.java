@@ -83,13 +83,51 @@ public class ClarificationReviewChainService {
         return true;
     }
 
+    /**
+     * §28.6 질문 0개 경로 — 기록 승인만 수행. 질문 검토 없이 가용 체인 역할을 확인·기록하고 승인자 목록을 반환한다.
+     * (사용자 개설 세션의 즉시 동결 경로에서 호출)
+     */
+    @Transactional
+    public List<UUID> runRecordApproval(UUID sessionId) {
+        ClarificationSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Clarification session not found: " + sessionId));
+        UUID ownerId = session.getProject().getUser().getId();
+        boolean securityRelated = isSecurityRelated(session);
+
+        List<UUID> approvers = new java.util.ArrayList<>();
+        for (Role role : CHAIN_ROLES) {
+            if (role == Role.SECURITY_DEVOPS && !securityRelated) {
+                continue; // §28.4 [4] "해당 시에만"
+            }
+            String reviewerId = reviewerIdFor(ownerId, role);
+            if (reviewerId == null) {
+                log(session, "기록 승인 감사: [" + role + "] 역할 부재로 건너뜀(질문 0개 경로)");
+                continue;
+            }
+            approvers.add(UUID.fromString(reviewerId));
+        }
+        log(session, "체인 기록 승인 — 질문 0개 경로(§28.6): " + approvers.size() + "명 확인");
+        return approvers;
+    }
+
     private void log(ClarificationSession session, String content) {
+        UUID sender = session.getOpenedByEmployeeId() != null
+                ? session.getOpenedByEmployeeId()
+                : plannerIdOrNull(session.getProject().getUser().getId());
+        if (sender == null) {
+            return; // 직원 부재 — 감사 로그 생략(세션·요구 기록 자체가 감사 자료)
+        }
         discussionMessageRepository.save(DiscussionMessage.builder()
                 .project(session.getProject())
-                .senderEmployeeId(session.getOpenedByEmployeeId())
+                .senderEmployeeId(sender)
                 .content(content)
                 .messageType(MessageType.DISCUSSION)
                 .build());
+    }
+
+    private UUID plannerIdOrNull(UUID userId) {
+        String plannerId = reviewerIdFor(userId, Role.PLANNER);
+        return plannerId == null ? null : UUID.fromString(plannerId);
     }
 
     private void markReviewed(ClarificationQuestion q, UUID reviewerId) {

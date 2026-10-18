@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -75,7 +76,7 @@ public class ClarificationRequirementApiTest {
         UUID sessionId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         RequirementSet set = frozenSet(1);
-        when(requirementSetService.freeze(eq(sessionId), eq(userId)))
+        when(requirementSetService.freeze(eq(sessionId), eq(userId), any()))
                 .thenReturn(new RequirementSetService.FrozenOutcome(set, emptyContent()));
         when(requirementSetService.parseContent(set)).thenReturn(emptyContent());
 
@@ -92,7 +93,7 @@ public class ClarificationRequirementApiTest {
     void freezeOnFrozenSessionReturns409() throws Exception {
         UUID sessionId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        when(requirementSetService.freeze(eq(sessionId), eq(userId)))
+        when(requirementSetService.freeze(eq(sessionId), eq(userId), any()))
                 .thenThrow(new IllegalStateException("Session already frozen (§28.6) — declare a new session for changes (REQ-005)"));
 
         mockMvc.perform(post("/api/v1/clarification-sessions/{id}/freeze", sessionId)
@@ -105,7 +106,7 @@ public class ClarificationRequirementApiTest {
     void freezeByNonOwnerReturns400() throws Exception {
         UUID sessionId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        when(requirementSetService.freeze(eq(sessionId), eq(userId)))
+        when(requirementSetService.freeze(eq(sessionId), eq(userId), any()))
                 .thenThrow(new IllegalArgumentException("Only the project owner (client position) can freeze"));
 
         mockMvc.perform(post("/api/v1/clarification-sessions/{id}/freeze", sessionId)
@@ -118,13 +119,29 @@ public class ClarificationRequirementApiTest {
     void freezeMissingSessionReturns404() throws Exception {
         UUID sessionId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        when(requirementSetService.freeze(eq(sessionId), eq(userId)))
+        when(requirementSetService.freeze(eq(sessionId), eq(userId), any()))
                 .thenThrow(new NoSuchElementException("Clarification session not found: " + sessionId));
 
         mockMvc.perform(post("/api/v1/clarification-sessions/{id}/freeze", sessionId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":\"" + userId + "\"}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void freezeWithClientDirectiveFlagReturns201() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        RequirementSet set = frozenSet(2);
+        when(requirementSetService.freeze(eq(sessionId), eq(userId), eq(true)))
+                .thenReturn(new RequirementSetService.FrozenOutcome(set, emptyContent()));
+        when(requirementSetService.parseContent(set)).thenReturn(emptyContent());
+
+        mockMvc.perform(post("/api/v1/clarification-sessions/{id}/freeze", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + userId + "\",\"clientDirective\":true}")) // "이 정도면 진행"(§28.6)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(2));
     }
 
     @Test

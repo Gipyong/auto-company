@@ -52,6 +52,30 @@ public class ClarificationController {
         return ResponseEntity.status(201).body(SessionResponse.from(session));
     }
 
+    // ==================== 사용자 개설 세션·취소 (REQ-005, §28.6) ====================
+
+    // 진화 출발점 (b): 사용자가 직접 새 세션 개설 — 변경 취지 원문+첨부
+    @PostMapping("/projects/{projectId}/clarification-sessions")
+    public ResponseEntity<SessionResponse> openUserSession(
+            @PathVariable UUID projectId,
+            @RequestBody OpenSessionRequest request) {
+        ClarificationSession session = sessionService.openUserSession(
+                projectId,
+                request.userId(),
+                request.changeNote(),
+                request.attachments() == null ? List.of() : request.attachments().stream()
+                        .map(a -> new ClarificationSessionService.AttachmentInput(
+                                a.filename(), a.mediaType(), a.sizeBytes(), a.contentBase64(), a.contentUri()))
+                        .toList());
+        return ResponseEntity.status(201).body(SessionResponse.from(session));
+    }
+
+    @PostMapping("/clarification-sessions/{id}/cancel")
+    public ResponseEntity<SessionResponse> cancelSession(@PathVariable UUID id,
+                                                         @RequestBody CancelRequest request) {
+        return ResponseEntity.ok(SessionResponse.from(sessionService.cancelSession(id, request.userId())));
+    }
+
     // ==================== 세션 조회 ====================
 
     @GetMapping("/projects/{projectId}/clarification-sessions")
@@ -101,7 +125,8 @@ public class ClarificationController {
     @PostMapping("/clarification-sessions/{id}/freeze")
     public ResponseEntity<RequirementSetResponse> freeze(@PathVariable UUID id,
                                                          @RequestBody FreezeRequest request) {
-        RequirementSetService.FrozenOutcome outcome = requirementSetService.freeze(id, request.userId());
+        RequirementSetService.FrozenOutcome outcome = requirementSetService.freeze(
+                id, request.userId(), request.clientDirective());
         return ResponseEntity.status(201).body(RequirementSetResponse.fromRequirements(
                 outcome.set(), requirementSetService.parseContent(outcome.set())));
     }
@@ -158,7 +183,15 @@ public class ClarificationController {
                                  String contentBase64, String contentUri) {
     }
 
-    public record FreezeRequest(UUID userId) {
+    /** REQ-005 §28.6(b) 사용자 개설 세션 — 개설 취지/변경 요청 원문(불변) 또는 첨부 최소 1개 */
+    public record OpenSessionRequest(UUID userId, String changeNote, List<AttachmentItem> attachments) {
+    }
+
+    public record CancelRequest(UUID userId) {
+    }
+
+    /** clientDirective=true: waiting_client에서 "이 정도면 진행" 명시 지시 동결(§28.6) */
+    public record FreezeRequest(UUID userId, Boolean clientDirective) {
     }
 
     // ===== REQ-003 DTO =====

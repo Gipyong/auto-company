@@ -36,7 +36,9 @@ public class WebConsoleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("id=\"tabbar\"")))
                 .andExpect(content().string(containsString("data-tab=\"goal\"")))
-                .andExpect(content().string(containsString("id=\"goalFiles\"")));
+                .andExpect(content().string(containsString("id=\"goalFiles\"")))
+                .andExpect(content().string(containsString("id=\"btnEvoOpen\""))) // REQ-005 진화 개설
+                .andExpect(content().string(containsString("id=\"btnCancel\"")));
     }
 
     @Test
@@ -46,7 +48,10 @@ public class WebConsoleIntegrationTest {
                 .andExpect(content().string(containsString("/api/v1/organizations/template/import")))
                 .andExpect(content().string(containsString("/api/v1/employees")))
                 .andExpect(content().string(containsString("/clarification-sessions")))
-                .andExpect(content().string(containsString("/pending-sessions")));
+                .andExpect(content().string(containsString("/pending-sessions")))
+                .andExpect(content().string(containsString("clientDirective"))) // §28.6 "이 정도면 진행"
+                .andExpect(content().string(containsString("/cancel")))
+                .andExpect(content().string(containsString("changeNote")));
     }
 
     @Test

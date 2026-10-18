@@ -904,9 +904,12 @@ function renderSessionDetail() {
   if (!s) { $("#sessionDetail").hidden = true; return; }
   $("#sessionDetail").hidden = false;
   $("#sessionDetailTitle").textContent = `${projectName(s.projectId)} — 세션 #${s.sessionNumber}`;
+  const userOpened = !!s.openedByUserId; // §28.6 사용자 개설(진화) 세션
   $("#sessionDetailBody").innerHTML = `
     <div class="sub">상태 ${statusBadge(s.status)} · 생성 ${fmtDate(s.createdAt)} · 질문 상한 ${s.maxQuestions}</div>
-    ${s.goalText ? `<div class="sub">골: ${esc(s.goalText)}</div>` : `<div class="sub">첨부 중심 접수 (§28.7-1)</div>`}
+    <div class="sub">개설 ${userOpened ? '<span class="badge">사용자 개설 (진화, §28.6)</span>' : "파이프라인"}
+      ${s.parentSessionId ? " · 이전 세션과 연결됨" : ""}</div>
+    ${s.goalText ? `<div class="sub">${userOpened ? "변경 요청" : "골"}: ${esc(s.goalText)}</div>` : `<div class="sub">첨부 중심 접수 (§28.7-1)</div>`}
     ${(s.attachments || []).length
       ? `<div class="chips">${s.attachments.map((a) => {
           const mark = a.parseStatus === "PARSED" ? "✔ 파싱"
@@ -917,9 +920,13 @@ function renderSessionDetail() {
       : ""}
   `;
   const editable = s.status === "WAITING_CLIENT";
-  $("#btnCompose").hidden = !["OPEN", "REVIEW"].includes(s.status);
+  const canFreeze = s.status === "REVIEW" || s.status === "WAITING_CLIENT"
+    || (userOpened && s.status === "OPEN"); // 사용자 개설 0질문 경로 §28.6
+  $("#btnCompose").hidden = userOpened || !["OPEN", "REVIEW"].includes(s.status);
   $("#btnSubmitAnswers").hidden = !editable;
-  $("#btnFreeze").hidden = s.status !== "REVIEW";
+  $("#btnFreeze").hidden = !canFreeze;
+  $("#btnFreeze").textContent = s.status === "WAITING_CLIENT" ? "이 정도면 진행(동결)" : "요구사항 동결";
+  $("#btnCancel").hidden = !["OPEN", "WAITING_CLIENT"].includes(s.status);
   $("#reqBox").innerHTML = "";
 
   if (["OPEN", "WAITING_CLIENT", "REVIEW"].includes(s.status)) {
@@ -928,10 +935,14 @@ function renderSessionDetail() {
       state.questions = qs;
       $("#questionsBox").innerHTML = qs.length
         ? renderQuestions(qs, editable)
-        : `<div class="item"><div class="sub">등록된 질문이 없습니다. '질문 구성'을 누르세요.</div></div>`;
+        : `<div class="item"><div class="sub">${userOpened
+            ? "사용자 개설 세션 — 질문 없이 바로 동결할 수 있습니다 (§28.6)."
+            : "등록된 질문이 없습니다. '질문 구성'을 누르세요."}</div></div>`;
     }).catch((e) => {
       $("#questionsBox").innerHTML = e.status === 409
-        ? `<div class="status err">회사 검토 체인이 진행 중입니다. 잠시 후 '질문 구성' 또는 새로 열어보세요.</div>`
+        ? (userOpened
+            ? `<div class="status">사용자 개설 세션입니다. 질문 없이 동결하면 체인은 기록 승인만 수행합니다(§28.6).</div>`
+            : `<div class="status err">회사 검토 체인이 진행 중입니다. 잠시 후 '질문 구성' 또는 새로 열어보세요.</div>`)
         : `<div class="status err">질문 조회 실패: ${esc(e.message)}</div>`;
     });
   } else {
@@ -1070,15 +1081,90 @@ async function composeQuestions() {
 async function freezeSession() {
   const s = state.currentSession;
   if (!s) return;
-  if (!confirm("요구사항을 동결할까요?\n동결 이후 수정은 새 버전으로만 가능합니다.")) return;
+  const directive = s.status === "WAITING_CLIENT"; // "이 정도면 진행" 명시 지시(§28.6)
+  const msg = directive
+    ? "고객 명시 지시로 동결할까요?\n미답 질문은 가정(assumption)으로 기록된 뒤 동결됩니다. (§28.6)"
+    : (s.openedByUserId && s.status === "OPEN"
+        ? "질문 없이 즉시 동결할까요?\n검토 체인은 기록 승인만 수행합니다. (§28.6)"
+        : "요구사항을 동결할까요?\n동결 이후 수정은 새 버전으로만 가능합니다.");
+  if (!confirm(msg)) return;
   try {
-    const r = await api("POST", `/api/v1/clarification-sessions/${s.id}/freeze`, { userId: state.ctx.userId });
+    const r = await api("POST", `/api/v1/clarification-sessions/${s.id}/freeze`, {
+      userId: state.ctx.userId,
+      clientDirective: directive ? true : null,
+    });
     toast(`요구사항을 동결했습니다 (v${r.version}).`);
     $("#reqBox").innerHTML = renderRequirementSet(r);
     await refreshAll();
     await openSession(s.id);
   } catch (e) {
     toast(`동결 실패: ${e.message}`, "err");
+  }
+}
+
+function renderEvoFileList() {
+  const files = Array.from(($("#evoFiles") || {}).files || []);
+  $("#evoFileList").innerHTML = files.length
+    ? files.map((f) => `<span class="chip">${esc(f.name)} (${Math.max(1, Math.round(f.size / 1024))}KB)</span>`).join("")
+    : "";
+}
+
+async function openEvolutionSession() {
+  if (!requireCtx()) return;
+  const projectId = $("#sessionProject").value;
+  const changeNote = $("#evoNote").value.trim();
+  const files = Array.from(($("#evoFiles") || {}).files || []);
+  if (!projectId) { toast("프로젝트를 선택하세요.", "err"); return; }
+  if (!changeNote && !files.length) {
+    toast("변경 요청 원문 또는 첨부 중 최소 한 가지가 필요합니다. (§28.7-1)", "err");
+    return;
+  }
+  const btn = $("#btnEvoOpen");
+  busy(btn, true);
+  try {
+    const attachments = [];
+    for (const f of files) {
+      attachments.push({
+        filename: f.name,
+        mediaType: f.type || "application/octet-stream",
+        sizeBytes: f.size,
+        contentBase64: await readFileAsBase64(f),
+      });
+    }
+    const s = await api("POST", `/api/v1/projects/${projectId}/clarification-sessions`, {
+      userId: state.ctx.userId,
+      changeNote: changeNote || null,
+      attachments,
+    });
+    $("#evoResult").textContent = `세션 #${s.sessionNumber} 개설 — 이전 세션에 연결(진화)`;
+    $("#evoResult").className = "status ok";
+    $("#evoNote").value = "";
+    $("#evoFiles").value = "";
+    renderEvoFileList();
+    toast("새 세션을 개설했습니다.");
+    await loadPendingSessions();
+    await loadSessions();
+    await openSession(s.id);
+  } catch (e) {
+    $("#evoResult").textContent = `실패: ${e.message}`;
+    $("#evoResult").className = "status err";
+    toast(e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function cancelSessionAction() {
+  const s = state.currentSession;
+  if (!s) return;
+  if (!confirm(`세션 #${s.sessionNumber}을(를) 취소할까요?\n취소 후에는 동결할 수 없습니다. (§28.6)`)) return;
+  try {
+    const r = await api("POST", `/api/v1/clarification-sessions/${s.id}/cancel`, { userId: state.ctx.userId });
+    toast(`세션 #${r.sessionNumber}을(를) 취소했습니다.`);
+    await refreshAll();
+    await openSession(s.id);
+  } catch (e) {
+    toast(`취소 실패: ${e.message}`, "err");
   }
 }
 
@@ -1227,6 +1313,9 @@ function bindEvents() {
   $("#btnCompose").addEventListener("click", composeQuestions);
   $("#btnSubmitAnswers").addEventListener("click", submitAnswers);
   $("#btnFreeze").addEventListener("click", freezeSession);
+  $("#btnCancel").addEventListener("click", cancelSessionAction);
+  $("#btnEvoOpen").addEventListener("click", openEvolutionSession);
+  $("#evoFiles").addEventListener("change", renderEvoFileList);
   ["#pendingSessions", "#sessionList"].forEach((sel) => {
     $(sel).addEventListener("click", (e) => {
       const item = e.target.closest("[data-session]");

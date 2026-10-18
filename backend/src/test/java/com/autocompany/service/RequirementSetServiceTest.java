@@ -40,6 +40,7 @@ public class RequirementSetServiceTest {
     private DiscussionMessageRepository discussionMessageRepository;
     private ArtifactRepository artifactRepository;
     private ClarificationExpertSignalDetector signalDetector;
+    private ClarificationReviewChainService reviewChainService;
     private RequirementSetService service;
 
     private UUID sessionId;
@@ -56,8 +57,10 @@ public class RequirementSetServiceTest {
         discussionMessageRepository = mock(DiscussionMessageRepository.class);
         artifactRepository = mock(ArtifactRepository.class);
         signalDetector = new ClarificationExpertSignalDetector();
+        reviewChainService = mock(ClarificationReviewChainService.class);
         service = new RequirementSetService(requirementSetRepository, sessionRepository,
-                questionRepository, discussionMessageRepository, signalDetector, objectMapper, artifactRepository);
+                questionRepository, discussionMessageRepository, signalDetector, objectMapper, artifactRepository,
+                reviewChainService);
 
         sessionId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -271,5 +274,60 @@ public class RequirementSetServiceTest {
                 .noneMatch(i -> "초기 목표".equals(i.title()))); // 골 텍스트가 없으면 기록하지 않는다
         assertEquals(1, outcome.content().nonFunctional().size());
         assertTrue(outcome.content().nonFunctional().get(0).evidence().contains("첨부"));
+    }
+
+    // ==================== REQ-005 사용자 개설·명시 지시 동결 경로(§28.6) ====================
+
+    @Test
+    void freezeUserZeroQuestionPathRunsRecordApprovalOnly() {
+        session.setStatus(ClarificationSession.SessionStatus.OPEN); // 개설 직후 — 질문 구성 없이 동결
+        session.setOpenedByUserId(ownerId); // 사용자 개설 세션 표식
+        session.setOpenedByEmployeeId(null);
+        UUID approver1 = UUID.randomUUID();
+        UUID approver2 = UUID.randomUUID();
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId)).thenReturn(List.of());
+        when(reviewChainService.runRecordApproval(sessionId)).thenReturn(List.of(approver1, approver2));
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId);
+
+        assertEquals(RequirementSet.SetStatus.FROZEN, outcome.set().getStatus());
+        assertEquals(ClarificationSession.SessionStatus.FROZEN, session.getStatus());
+        // §28.6 — 체인은 기록 승인만 수행, 승인자 목록이 frozen_by에 남는다
+        assertEquals(List.of(approver1, approver2), outcome.set().getFrozenByEmployeeIds());
+    }
+
+    @Test
+    void freezeWaitingClientWithoutDirectiveIsRejected() {
+        session.setStatus(ClarificationSession.SessionStatus.WAITING_CLIENT);
+        ClarificationQuestion unanswered = ClarificationQuestion.builder()
+                .session(session).questionType(QuestionType.SHORT_TEXT)
+                .prompt("기한").displayOrder(1).build();
+        unanswered.setId(UUID.randomUUID());
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId))
+                .thenReturn(List.of(unanswered));
+
+        // 고객 명시 지시 없이 waiting_client 동결 불가
+        assertThrows(IllegalStateException.class, () -> service.freeze(sessionId, ownerId));
+    }
+
+    @Test
+    void freezeWaitingClientWithDirectiveMarksUnansweredAsSkippedWithAssumption() {
+        session.setStatus(ClarificationSession.SessionStatus.WAITING_CLIENT);
+        ClarificationQuestion answered = q(1, QuestionType.SINGLE_CHOICE, List.of("mvp"), null);
+        ClarificationQuestion unanswered = ClarificationQuestion.builder()
+                .session(session).questionType(QuestionType.SHORT_TEXT)
+                .prompt("기한").displayOrder(2).build();
+        unanswered.setId(UUID.randomUUID());
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId))
+                .thenReturn(List.of(answered, unanswered));
+
+        RequirementSetService.FrozenOutcome outcome = service.freeze(sessionId, ownerId, true);
+
+        // §28.6 "이 정도면 진행" — 미답 질문은 가정으로 기록된 뒤 동결
+        assertEquals(ClarificationQuestion.AnswerStatus.SKIPPED, unanswered.getAnswerStatus());
+        assertEquals("고객 명시 지시로 진행(이 정도면 진행, §28.6)", unanswered.getAssumptionIfSkipped());
+        assertEquals(RequirementSet.SetStatus.FROZEN, outcome.set().getStatus());
+        assertTrue(outcome.content().openRisks().stream()
+                .anyMatch(i -> i.detail().contains("이 정도면 진행")));
     }
 }

@@ -24,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -156,6 +158,30 @@ public class ClarificationReviewChainServiceTest {
         assertTrue(passed);
         assertEquals(5, question.getReviewedByEmployeeIds().size()); // §28.4 [4] 보안 단계 관련 시 실행
         assertTrue(question.getReviewedByEmployeeIds().contains(securityEmployeeId));
+    }
+
+    // ==================== REQ-005 질문 0개 경로 — 기록 승인(§28.6) ====================
+
+    @Test
+    void recordApprovalListsAvailableRolesWithoutReviewingQuestions() {
+        roleExists(Role.PLANNER, 1);
+        roleExists(Role.ARCHITECT, 2);
+        roleExists(Role.PROJECT_MANAGER, 5);
+        UUID plannerEmployeeId = employeeRepository.findByUserIdAndRole(ownerId, Role.PLANNER).get(0).getId();
+
+        List<UUID> approvers = service.runRecordApproval(sessionId);
+
+        assertEquals(3, approvers.size()); // 가용 역할만 기록 승인자로 남는다
+        assertTrue(approvers.contains(plannerEmployeeId));
+        assertEquals(ClarificationSession.SessionStatus.OPEN, session.getStatus()); // 기록만 — 상태 전이 없음
+        verify(discussionMessageRepository, atLeastOnce()).save(any(DiscussionMessage.class));
+    }
+
+    @Test
+    void recordApprovalWithNoEmployeesReturnsEmptyApproversAndSkips() {
+        List<UUID> approvers = service.runRecordApproval(sessionId);
+
+        assertTrue(approvers.isEmpty()); // 역할 전무 조직 — 건너뜀 기록 후 빈 목록
     }
 
     // ==================== 반송 경로 (Mock 규칙) ====================
