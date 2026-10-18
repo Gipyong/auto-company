@@ -28,6 +28,7 @@ public class ClarificationQuestionServiceTest {
     private ClarificationQuestionRepository questionRepository;
     private ClarificationSessionRepository sessionRepository;
     private DiscussionMessageRepository discussionMessageRepository;
+    private ClarificationReviewChainService reviewChainService;
     private ClarificationQuestionService service;
 
     private UUID sessionId;
@@ -41,8 +42,9 @@ public class ClarificationQuestionServiceTest {
         questionRepository = mock(ClarificationQuestionRepository.class);
         sessionRepository = mock(ClarificationSessionRepository.class);
         discussionMessageRepository = mock(DiscussionMessageRepository.class);
+        reviewChainService = mock(ClarificationReviewChainService.class);
         service = new ClarificationQuestionService(questionRepository, sessionRepository,
-                discussionMessageRepository, new ClarificationExpertSignalDetector());
+                discussionMessageRepository, reviewChainService, new ClarificationExpertSignalDetector());
 
         sessionId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -89,18 +91,30 @@ public class ClarificationQuestionServiceTest {
 
     @Test
     void composeCreatesTemplateQuestionsWithinMaxLimit() {
+        when(reviewChainService.runReviewChain(sessionId)).thenReturn(true);
         List<ClarificationQuestion> result = service.composeQuestions(sessionId);
 
         assertEquals(5, result.size()); // 템플릿 6개 중 maxQuestions=5 상한
         assertEquals(1, result.get(0).getDisplayOrder());
         assertEquals(QuestionType.SINGLE_CHOICE, result.get(0).getQuestionType());
-        assertEquals(SessionStatus.WAITING_CLIENT, session.getStatus());
+        assertEquals(SessionStatus.WAITING_CLIENT, session.getStatus()); // 체인 통과 후 전달(§28.4)
         verify(questionRepository, times(5)).save(any());
+    }
+
+    @Test
+    void composeKeepsOpenWhenReviewChainRejects() {
+        when(reviewChainService.runReviewChain(sessionId)).thenReturn(false);
+
+        List<ClarificationQuestion> result = service.composeQuestions(sessionId);
+
+        assertFalse(result.isEmpty());
+        assertEquals(SessionStatus.OPEN, session.getStatus()); // 협의 재검토로 회귀(§28.4)
     }
 
     @Test
     void composeSkipsFeatureQuestionWhenGoalDeclaresFeatures() {
         session.setGoalText("회원가입, 로그인, 댓글 기능이 필요합니다.");
+        when(reviewChainService.runReviewChain(sessionId)).thenReturn(true);
 
         List<ClarificationQuestion> result = service.composeQuestions(sessionId);
 
@@ -131,6 +145,25 @@ public class ClarificationQuestionServiceTest {
         session.setMaxQuestions(2);
         List<ClarificationQuestion> result = service.composeQuestions(sessionId);
         assertEquals(2, result.size());
+    }
+
+    // ==================== 조회 게이트 (§28.4: 체인 통과 후에만 표시) ====================
+
+    @Test
+    void getQuestionsRejectsWhileReviewChainPending() {
+        session.setStatus(SessionStatus.OPEN);
+        assertThrows(IllegalStateException.class, () -> service.getQuestions(sessionId));
+    }
+
+    @Test
+    void getQuestionsReturnsListAfterChainPass() {
+        session.setStatus(SessionStatus.WAITING_CLIENT);
+        when(questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId))
+                .thenReturn(List.of(question(1, QuestionType.SINGLE_CHOICE, "mvp", "full")));
+
+        List<ClarificationQuestion> result = service.getQuestions(sessionId);
+
+        assertEquals(1, result.size());
     }
 
     // ==================== 답변 ====================

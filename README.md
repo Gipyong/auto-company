@@ -22,8 +22,9 @@
 - 업무 할당 (`POST /api/v1/tasks`)
 - 직급별 모델 풀 기반 Cost-Performance Router (PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)
 - 피드백 평가 (`POST /api/v1/ratings` — 근거 참조 `evidenceRefs` 포함, 자동 승급 없음)
-- 요구 명확화 세션 기초 (REQ-001 — 골 접수 `POST /api/v1/projects/{id}/goal`, 파이프라인 세션 open 개설(PLANNER), 세션 조회 2종, 질문 수신함 `GET /users/{userId}/pending-sessions` /*동결·검토 체인은 REQ-003에서 구현*/)
+- 요구 명확화 세션 기초 (REQ-001 — 골 접수 `POST /api/v1/projects/{id}/goal`, 파이프라인 세션 open 개설(PLANNER), 세션 조회 2종, 질문 수신함 `GET /users/{userId}/pending-sessions`)
 - 클라리피케이션 질문·답변 (REQ-002 — 질문 구성 `POST /clarification-sessions/{id}/questions`(개별 체크박스·기타·max_questions 상한, 0단계 전문성 신호 선식별 기록), 질문 조회 `GET .../questions`, 구조화 답변 `POST .../answers`(유형별 검증·skipped, 필수 미답 409+남은 질문, 전체 답변 시 review 전환))
+- 검토 체인·동결·요구사항 기록 (REQ-003 — 검토 체인 통과 후에만 질문 공개(open에서 재확인), 동결 `POST /clarification-sessions/{id}/freeze`(REVIEW만 가능, frozen 재동결 409 — 변경은 새 세션 REQ-005), RequirementSet v1 기록 생성(기능/비기능/제약/제외/리스크 + 항목 source 태깅 client_declared/client_answered/employee_derived), 누적 기록 `GET /projects/{id}/requirements`(버전 내림차순, 이전 FROZEN은 superseded 보존))
 - 토론 (`POST /api/v1/messages`)
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합

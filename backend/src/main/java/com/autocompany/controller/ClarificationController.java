@@ -3,10 +3,12 @@ package com.autocompany.controller;
 import com.autocompany.entity.ClarificationQuestion;
 import com.autocompany.entity.ClarificationQuestion.QuestionOption;
 import com.autocompany.entity.ClarificationSession;
+import com.autocompany.entity.RequirementSet;
 import com.autocompany.service.ClarificationQuestionService;
 import com.autocompany.service.ClarificationQuestionService.RemainingAnswersException;
 import com.autocompany.service.ClarificationQuestionService.SubmitAnswersRequest;
 import com.autocompany.service.ClarificationSessionService;
+import com.autocompany.service.RequirementSetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +23,8 @@ import java.util.UUID;
 /**
  * 요구사항 명확화 API (§17, §28) —
  * REQ-001: 골 접수 + 세션 개설·조회·질문 수신함,
- * REQ-002: 질문 구성기 + 구조화 답변(§28.3 최소 질문, §28.4 0단계 신호 선식별).
+ * REQ-002: 질문 구성기 + 구조화 답변(§28.3 최소 질문, §28.4 0단계 신호 선식별),
+ * REQ-003: 검토 체인 게이트 + 동결·RequirementSet(§28.6).
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -30,6 +33,7 @@ public class ClarificationController {
 
     private final ClarificationSessionService sessionService;
     private final ClarificationQuestionService questionService;
+    private final RequirementSetService requirementSetService;
 
     // ==================== Goal → 세션 개설 ====================
 
@@ -84,6 +88,25 @@ public class ClarificationController {
         return ResponseEntity.ok(SessionResponse.from(session));
     }
 
+    // ==================== 동결 + RequirementSet (§28.6, REQ-003) ====================
+
+    // 동결 즉시 RequirementSet 생성(불변). frozen은 새 버전만 가능 — 수정 API 없음
+    @PostMapping("/clarification-sessions/{id}/freeze")
+    public ResponseEntity<RequirementSetResponse> freeze(@PathVariable UUID id,
+                                                         @RequestBody FreezeRequest request) {
+        RequirementSetService.FrozenOutcome outcome = requirementSetService.freeze(id, request.userId());
+        return ResponseEntity.status(201).body(RequirementSetResponse.fromRequirements(
+                outcome.set(), requirementSetService.parseContent(outcome.set())));
+    }
+
+    // 누적 기록(버전별) — §17
+    @GetMapping("/projects/{projectId}/requirements")
+    public ResponseEntity<List<RequirementSetResponse>> getRequirements(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(requirementSetService.listByProject(projectId).stream()
+                .map(set -> RequirementSetResponse.fromRequirements(set, requirementSetService.parseContent(set)))
+                .toList());
+    }
+
     // ==================== 질문 수신함 (§28.5) ====================
 
     @GetMapping("/users/{userId}/pending-sessions")
@@ -121,6 +144,59 @@ public class ClarificationController {
     // ==================== DTO ====================
 
     public record GoalRequest(UUID userId, String goalText) {
+    }
+
+    public record FreezeRequest(UUID userId) {
+    }
+
+    // ===== REQ-003 DTO =====
+
+    public record RequirementItemView(String title, String detail, String source, String evidence, UUID questionId) {
+    }
+
+    public record RequirementContentResponse(
+            List<RequirementItemView> functional,
+            List<RequirementItemView> nonFunctional,
+            List<RequirementItemView> constraints,
+            List<RequirementItemView> outOfScope,
+            List<RequirementItemView> openRisks) {
+    }
+
+    public record RequirementSetResponse(
+            UUID id,
+            UUID projectId,
+            UUID sessionId,
+            UUID organizationId,
+            int version,
+            String status,
+            List<UUID> frozenByEmployeeIds,
+            List<UUID> derivedTaskIds,
+            LocalDateTime createdAt,
+            LocalDateTime frozenAt,
+            RequirementContentResponse content) {
+
+        public static RequirementSetResponse fromRequirements(RequirementSet set, RequirementSetService.RequirementContent c) {
+            return new RequirementSetResponse(
+                    set.getId(),
+                    set.getProject().getId(),
+                    set.getSession().getId(),
+                    null,
+                    set.getVersion(),
+                    set.getStatus().name(),
+                    set.getFrozenByEmployeeIds() == null ? List.of() : set.getFrozenByEmployeeIds(),
+                    set.getDerivedTaskIds() == null ? List.of() : set.getDerivedTaskIds(),
+                    set.getCreatedAt(),
+                    set.getFrozenAt(),
+                    new RequirementContentResponse(
+                            map(c.functional()), map(c.nonFunctional()),
+                            map(c.constraints()), map(c.outOfScope()), map(c.openRisks())));
+        }
+
+        private static List<RequirementItemView> map(List<RequirementSetService.RequirementItem> items) {
+            return items == null ? List.of() : items.stream()
+                    .map(i -> new RequirementItemView(i.title(), i.detail(), i.source(), i.evidence(), i.questionId()))
+                    .toList();
+        }
     }
 
     // ===== REQ-002 DTO =====
