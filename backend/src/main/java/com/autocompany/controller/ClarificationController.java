@@ -1,11 +1,17 @@
 package com.autocompany.controller;
 
+import com.autocompany.entity.ClarificationQuestion;
+import com.autocompany.entity.ClarificationQuestion.QuestionOption;
 import com.autocompany.entity.ClarificationSession;
+import com.autocompany.service.ClarificationQuestionService;
+import com.autocompany.service.ClarificationQuestionService.RemainingAnswersException;
+import com.autocompany.service.ClarificationQuestionService.SubmitAnswersRequest;
 import com.autocompany.service.ClarificationSessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +19,9 @@ import java.util.NoSuchElementException;
 import java.util.UUID;
 
 /**
- * 요구사항 명확화 API (§17, §28) — REQ-001: 골 접수 + 세션 개설·조회·질문 수신함.
+ * 요구사항 명확화 API (§17, §28) —
+ * REQ-001: 골 접수 + 세션 개설·조회·질문 수신함,
+ * REQ-002: 질문 구성기 + 구조화 답변(§28.3 최소 질문, §28.4 0단계 신호 선식별).
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -21,6 +29,7 @@ import java.util.UUID;
 public class ClarificationController {
 
     private final ClarificationSessionService sessionService;
+    private final ClarificationQuestionService questionService;
 
     // ==================== Goal → 세션 개설 ====================
 
@@ -49,6 +58,32 @@ public class ClarificationController {
                 .orElseThrow(() -> new NoSuchElementException("Clarification session not found: " + id));
     }
 
+    // ==================== 질문 구성·조회 (REQ-002) ====================
+
+    // 내부 협의 결과로 질문을 준비한다(§28.3) — 체인(REQ-003) 도입 전까지 waiting_client 즉시 진입
+    @PostMapping("/clarification-sessions/{id}/questions")
+    public ResponseEntity<List<QuestionView>> composeQuestions(@PathVariable UUID id) {
+        return ResponseEntity.status(201).body(questionService.composeQuestions(id).stream()
+                .map(QuestionView::from)
+                .toList());
+    }
+
+    @GetMapping("/clarification-sessions/{id}/questions")
+    public ResponseEntity<List<QuestionView>> getQuestions(@PathVariable UUID id) {
+        return ResponseEntity.ok(questionService.getQuestions(id).stream()
+                .map(QuestionView::from)
+                .toList());
+    }
+
+    // ==================== 답변 접수 (§17: 필수 미답 409 + 남은 질문) ====================
+
+    @PostMapping("/clarification-sessions/{id}/answers")
+    public ResponseEntity<SessionResponse> submitAnswers(@PathVariable UUID id,
+                                                         @RequestBody SubmitAnswersRequest request) {
+        ClarificationSession session = questionService.submitAnswers(id, request.userId(), request.answers());
+        return ResponseEntity.ok(SessionResponse.from(session));
+    }
+
     // ==================== 질문 수신함 (§28.5) ====================
 
     @GetMapping("/users/{userId}/pending-sessions")
@@ -75,9 +110,55 @@ public class ClarificationController {
         return ResponseEntity.status(404).body(Map.of("error_code", "NOT_FOUND", "message", e.getMessage()));
     }
 
+    @ExceptionHandler(RemainingAnswersException.class)
+    public ResponseEntity<Map<String, Object>> handleRemaining(RemainingAnswersException e) {
+        return ResponseEntity.status(409).body(Map.of(
+                "error_code", "REQUIRED_ANSWERS_MISSING",
+                "message", e.getMessage(),
+                "remaining", e.remaining));
+    }
+
     // ==================== DTO ====================
 
     public record GoalRequest(UUID userId, String goalText) {
+    }
+
+    // ===== REQ-002 DTO =====
+
+    public record QuestionOptionView(String value, String label, String description) {
+        public static QuestionOptionView from(QuestionOption o) {
+            return new QuestionOptionView(o.value(), o.label(), o.description());
+        }
+    }
+
+    public record QuestionView(
+            UUID id,
+            UUID sessionId,
+            int displayOrder,
+            String questionType,
+            String prompt,
+            List<QuestionOptionView> options,
+            boolean allowOther,
+            String answerStatus,
+            String otherText,
+            List<String> selectedValues,
+            BigDecimal numericAnswer) {
+
+        public static QuestionView from(ClarificationQuestion q) {
+            return new QuestionView(
+                    q.getId(),
+                    q.getSession().getId(),
+                    q.getDisplayOrder(),
+                    q.getQuestionType().name(),
+                    q.getPrompt(),
+                    q.getOptions() == null ? List.of() :
+                            q.getOptions().stream().map(QuestionOptionView::from).toList(),
+                    q.isAllowOther(),
+                    q.getAnswerStatus().name(),
+                    q.getOtherText(),
+                    q.getSelectedValues(),
+                    q.getNumericAnswer());
+        }
     }
 
     public record SessionResponse(
