@@ -464,7 +464,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 - `POST /clarification-sessions/{id}/cancel` — 고객 포지션 사용자가 `open|waiting_client` 세션 취소(사용자 개설·파이프라인 개설 모두; Audit; frozen 이후 불가)
 - `GET /projects/{project_id}/clarification-sessions` / `GET /clarification-sessions/{id}`
 - `POST /clarification-sessions/{id}/answers` — `{userId, answers:[{questionId, selectedValues, otherText}]}`; 필수 미답 시 409+남은 질문 정보
-- `POST /clarification-sessions/{id}/freeze` — 동결→RequirementSet 생성; frozen은 새 버전만 가능(수정 API 없음; 규칙 §28.6)
+- `POST /clarification-sessions/{id}/freeze` — 동결→RequirementSet 생성; frozen은 새 버전만 가능(수정 API 없음; 규칙 §28.6). `{userId, clientDirective?}` — `clientDirective=true`: `waiting_client`에서 "이 정도면 진행" 명시 지시 경로(미답 질문은 가정으로 기록); 사용자 개설 세션은 질문 0개 경로(체인 기록 승인만)로 바로 동결 가능
 - `GET /projects/{project_id}/requirements` — 누적 기록(버전별)
 - `GET /users/{userId}/pending-sessions` — 고객 포지션 사용자 접속 시 미답변 세션 목록("질문 수신함"; MVP 알림 대체)
 
@@ -481,7 +481,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)**. 미구현: 사용자 세션 개설·취소(REQ-005), 직원 지시 편집(EMP-001 이후). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)**. 미구현: 직원 지시 편집(EMP-001 이후). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 

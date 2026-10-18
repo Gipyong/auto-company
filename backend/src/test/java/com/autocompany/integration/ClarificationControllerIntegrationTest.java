@@ -165,4 +165,59 @@ public class ClarificationControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
     }
+
+    // ==================== REQ-005 사용자 개설·취소(§28.6) ====================
+
+    @Test
+    public void userSessionOpenReturns201WithIncrementedNumber() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        ClarificationSession session = sampleSession(2, SessionStatus.OPEN);
+        session.setOpenedByUserId(UUID.randomUUID());
+        when(sessionService.openUserSession(eq(projectId), any(), eq("요금제 문구 수정"), any()))
+                .thenReturn(session);
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/clarification-sessions", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"changeNote\":\"요금제 문구 수정\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sessionNumber").value(2))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    public void userSessionOpenWhileActiveReturns409() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.openUserSession(eq(projectId), any(), any(), any()))
+                .thenThrow(new IllegalStateException("Active clarification session already exists for project (§28.6: 409)"));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/clarification-sessions", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"changeNote\":\"수정\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    public void cancelSessionReturns200WithCancelledStatus() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        when(sessionService.cancelSession(eq(sessionId), any()))
+                .thenReturn(sampleSession(1, SessionStatus.CANCELLED));
+
+        mockMvc.perform(post("/api/v1/clarification-sessions/{id}/cancel", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    public void cancelFrozenSessionReturns409() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        when(sessionService.cancelSession(eq(sessionId), any()))
+                .thenThrow(new IllegalStateException("Frozen session cannot be cancelled (§28.6)"));
+
+        mockMvc.perform(post("/api/v1/clarification-sessions/{id}/cancel", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isConflict());
+    }
 }

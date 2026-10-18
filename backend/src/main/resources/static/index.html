@@ -216,6 +216,16 @@
       </div>
       <div class="list" id="sessionList"></div>
 
+      <h3>새 세션 개설 (진화, §28.6)</h3>
+      <p class="hint">변경 요청 원문 또는 첨부로 새 세션을 개설합니다. 세션 번호가 오르고 이전 세션과 연결됩니다.</p>
+      <label for="evoNote">변경 요청 원문 (첨부 단독 개설 시 비워도 됩니다)</label>
+      <textarea id="evoNote" rows="2"></textarea>
+      <label for="evoFiles">첨부 (선택) — 최대 10개·파일당 50MB</label>
+      <input id="evoFiles" type="file" multiple>
+      <div id="evoFileList" class="chips"></div>
+      <button id="btnEvoOpen" class="btn">새 세션 개설</button>
+      <div id="evoResult" class="status"></div>
+
       <div id="sessionDetail" hidden>
         <div class="row between">
           <h3 id="sessionDetailTitle">세션</h3>
@@ -226,6 +236,7 @@
           <button id="btnCompose" class="btn primary">질문 구성</button>
           <button id="btnSubmitAnswers" class="btn primary" hidden>답변 제출</button>
           <button id="btnFreeze" class="btn danger" hidden>요구사항 동결</button>
+          <button id="btnCancel" class="btn ghost" hidden>세션 취소</button>
         </div>
         <div id="questionsBox" class="list"></div>
         <div id="reqBox"></div>

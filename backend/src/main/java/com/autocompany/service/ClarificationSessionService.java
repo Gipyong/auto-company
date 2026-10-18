@@ -207,6 +207,101 @@ public class ClarificationSessionService {
                 .build());
     }
 
+    // ==================== REQ-005 사용자 개설 세션·취소 (§28.6) ====================
+
+    /**
+     * 사용자(고객 포지션) 개설 진화 세션 — 변경 취지 원문(changeNote)+첨부(§28.7 입력과 동일).
+     * 새 session_number·parent_session_id 연결, 같은 프로젝트에 open|waiting_client 존재 시 409.
+     */
+    @Transactional
+    public ClarificationSession openUserSession(UUID projectId, UUID userId,
+                                                String changeNote, List<AttachmentInput> attachments) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Project not found: " + projectId));
+        if (userId == null) {
+            throw new IllegalArgumentException("userId is required");
+        }
+        User owner = project.getUser();
+        if (owner == null || !userId.equals(owner.getId())) {
+            throw new IllegalArgumentException("Only the project owner can open a clarification session (§28.6)");
+        }
+        if ((changeNote == null || changeNote.isBlank()) && (attachments == null || attachments.isEmpty())) {
+            throw new IllegalArgumentException("changeNote or attachments is required (§28.7: min 1 of 2, 400)");
+        }
+        if (sessionRepository.existsByProjectIdAndStatusIn(projectId, ACTIVE_STATUSES)) {
+            throw new IllegalStateException("Active clarification session already exists for project (§28.6: 409)");
+        }
+
+        List<Artifact> saved = List.of();
+        List<AttachmentRef> refs = new ArrayList<>();
+        if (attachments != null && !attachments.isEmpty()) {
+            saved = storeAttachments(project, attachments, refs);
+        }
+
+        ClarificationSession previous = sessionRepository
+                .findFirstByProjectIdOrderBySessionNumberDesc(projectId)
+                .orElse(null);
+        int nextNumber = previous == null ? 1 : previous.getSessionNumber() + 1;
+
+        ClarificationSession session = ClarificationSession.builder()
+                .project(project)
+                .goalText(changeNote) // §5.23 불변 감사용 원문 — 세션 개설 취지/변경 요청 원문
+                .sessionNumber(nextNumber)
+                .status(SessionStatus.OPEN)
+                .openedByUserId(userId) // 파이프라인 개설(opened_by_employee_id)과 구분(§28.6)
+                .parentSessionId(previous == null ? null : previous.getId()) // 진화 승계
+                .attachments(refs)
+                .build();
+        session = sessionRepository.save(session);
+
+        // 파이프라인(대표 PLANNER)이 접수 기록 — 직원 부재 조직이면 기록 생략(세션 개설 자체는 유효)
+        UUID recorder = findLeadPlannerId(project).orElse(null);
+        if (recorder != null) {
+            discussionMessageRepository.save(DiscussionMessage.builder()
+                    .project(project)
+                    .senderEmployeeId(recorder)
+                    .content("사용자 개설 세션 #" + nextNumber + " — 변경 요청 접수(§28.6 진화, 개설 취지 원문 보존"
+                            + (saved.isEmpty() ? "" : ", 첨부 " + saved.size() + "건") + ")")
+                    .messageType(MessageType.DISCUSSION)
+                    .build());
+            logParseSummary(project, recorder, saved);
+        }
+        return session;
+    }
+
+    /** 세션 취소 — 고객 포지션 사용자(Audit), open|waiting_client만 가능(§28.6; frozen·review 이후 불가) */
+    @Transactional
+    public ClarificationSession cancelSession(UUID sessionId, UUID userId) {
+        ClarificationSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Clarification session not found: " + sessionId));
+        if (userId == null || !userId.equals(session.getProject().getUser().getId())) {
+            throw new IllegalArgumentException("Only the project owner (client position) can cancel (§28.6)");
+        }
+        if (session.getStatus() == SessionStatus.FROZEN) {
+            throw new IllegalStateException("Frozen session cannot be cancelled (§28.6)");
+        }
+        if (session.getStatus() != SessionStatus.OPEN && session.getStatus() != SessionStatus.WAITING_CLIENT) {
+            throw new IllegalStateException("Only open|waiting_client sessions can be cancelled (§28.6): "
+                    + session.getStatus());
+        }
+        session.setStatus(SessionStatus.CANCELLED);
+        session.setClosedAt(java.time.LocalDateTime.now());
+        session = sessionRepository.save(session);
+
+        UUID recorder = session.getOpenedByEmployeeId() != null
+                ? session.getOpenedByEmployeeId()
+                : findLeadPlannerId(session.getProject()).orElse(null);
+        if (recorder != null) {
+            discussionMessageRepository.save(DiscussionMessage.builder()
+                    .project(session.getProject())
+                    .senderEmployeeId(recorder)
+                    .content("세션 #" + session.getSessionNumber() + " 취소 — 고객 포지션 사용자 요청(Audit, §28.6)")
+                    .messageType(MessageType.DISCUSSION)
+                    .build());
+        }
+        return session;
+    }
+
     @Transactional(readOnly = true)
     public List<ClarificationSession> getSessionsByProject(UUID projectId) {
         return sessionRepository.findByProjectIdOrderBySessionNumberDesc(projectId);

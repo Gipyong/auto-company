@@ -40,6 +40,7 @@ public class RequirementSetService {
     private final ClarificationExpertSignalDetector signalDetector;
     private final ObjectMapper objectMapper;
     private final com.autocompany.repository.ArtifactRepository artifactRepository;
+    private final ClarificationReviewChainService reviewChainService;
 
     public record RequirementItem(String title, String detail, String source, String evidence, UUID questionId) {
     }
@@ -57,6 +58,15 @@ public class RequirementSetService {
 
     @Transactional
     public FrozenOutcome freeze(UUID sessionId, UUID userId) {
+        return freeze(sessionId, userId, null);
+    }
+
+    /**
+     * 동결 (§28.6). 경로: ① REVIEW(필수 답 완료+체인 승인) ② clientDirective=true — waiting_client에서
+     * "이 정도면 진행"(미답 질문은 가정으로 기록) ③ 사용자 개설 세션 질문 0개 경로(체인 기록 승인만 수행).
+     */
+    @Transactional
+    public FrozenOutcome freeze(UUID sessionId, UUID userId, Boolean clientDirective) {
         ClarificationSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new NoSuchElementException("Clarification session not found: " + sessionId));
         if (userId == null || !userId.equals(session.getProject().getUser().getId())) {
@@ -68,11 +78,29 @@ public class RequirementSetService {
         if (session.getStatus() == SessionStatus.CANCELLED) {
             throw new IllegalStateException("Cancelled session cannot be frozen");
         }
-        if (session.getStatus() != SessionStatus.REVIEW) {
-            throw new IllegalStateException("Freeze requires completed required answers (REVIEW state)");
-        }
 
         List<ClarificationQuestion> questions = questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId);
+        boolean recordOnlyPath = questions.isEmpty()
+                && session.getOpenedByUserId() != null
+                && (session.getStatus() == SessionStatus.OPEN || session.getStatus() == SessionStatus.WAITING_CLIENT);
+        boolean directivePath = Boolean.TRUE.equals(clientDirective)
+                && session.getStatus() == SessionStatus.WAITING_CLIENT;
+
+        if (directivePath) {
+            // §28.6 "이 정도면 진행" — 미답 질문은 가정(assumption)으로 기록 후 동결
+            for (ClarificationQuestion q : questions) {
+                if (q.getAnswerStatus() == AnswerStatus.UNANSWERED) {
+                    q.setAnswerStatus(AnswerStatus.SKIPPED);
+                    q.setAssumptionIfSkipped("고객 명시 지시로 진행(이 정도면 진행, §28.6)");
+                }
+            }
+            questionRepository.saveAll(questions);
+        }
+        if (!recordOnlyPath && !directivePath && session.getStatus() != SessionStatus.REVIEW) {
+            throw new IllegalStateException("Freeze requires completed required answers (REVIEW state)"
+                    + " — 사용자 개설 세션 질문 0개 경로·고객 명시 지시(§28.6) 외에는 불가");
+        }
+
         boolean hasUnanswered = questions.stream().anyMatch(q -> q.getAnswerStatus() == AnswerStatus.UNANSWERED);
         if (hasUnanswered) {
             throw new IllegalStateException("Unanswered required questions remain");
@@ -82,13 +110,18 @@ public class RequirementSetService {
         int version = nextVersion(session.getProject().getId());
         supersedePrevious(session.getProject().getId());
 
-        List<UUID> frozenBy = questions.stream()
-                .map(q -> q.getReviewedByEmployeeIds() == null
-                        ? java.util.List.<UUID>of()
-                        : q.getReviewedByEmployeeIds())
-                .flatMap(List::stream)
-                .distinct()
-                .collect(Collectors.toList());
+        List<UUID> frozenBy;
+        if (recordOnlyPath) {
+            frozenBy = reviewChainService.runRecordApproval(sessionId); // §28.6 체인은 기록 승인만 수행
+        } else {
+            frozenBy = questions.stream()
+                    .map(q -> q.getReviewedByEmployeeIds() == null
+                            ? java.util.List.<UUID>of()
+                            : q.getReviewedByEmployeeIds())
+                    .flatMap(List::stream)
+                    .distinct()
+                    .collect(Collectors.toList());
+        }
 
         RequirementSet set = RequirementSet.builder()
                 .project(session.getProject())
@@ -104,12 +137,17 @@ public class RequirementSetService {
         session.setStatus(SessionStatus.FROZEN);
         session.setFrozenAt(LocalDateTime.now());
         sessionRepository.save(session);
-        discussionMessageRepository.save(DiscussionMessage.builder()
-                .project(session.getProject())
-                .senderEmployeeId(session.getOpenedByEmployeeId())
-                .content("요구 사항 동결 — RequirementSet v" + version + " (§28.6 불변)")
-                .messageType(MessageType.DISCUSSION)
-                .build());
+        UUID logSender = session.getOpenedByEmployeeId() != null
+                ? session.getOpenedByEmployeeId()
+                : (frozenBy.isEmpty() ? null : frozenBy.get(0));
+        if (logSender != null) {
+            discussionMessageRepository.save(DiscussionMessage.builder()
+                    .project(session.getProject())
+                    .senderEmployeeId(logSender)
+                    .content("요구 사항 동결 — RequirementSet v" + version + " (§28.6 불변)")
+                    .messageType(MessageType.DISCUSSION)
+                    .build());
+        }
         return new FrozenOutcome(set, content);
     }
 

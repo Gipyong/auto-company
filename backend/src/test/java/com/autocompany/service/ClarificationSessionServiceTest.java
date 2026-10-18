@@ -259,4 +259,149 @@ public class ClarificationSessionServiceTest {
         assertNotNull(artifact.getStorageBlob());
         verify(discussionMessageRepository, times(2)).save(any(DiscussionMessage.class)); // 개설+보강 요청 기록
     }
+
+    // ==================== REQ-005 사용자 개설 세션(§28.6) ====================
+
+    private ClarificationSession previousSession(int number) {
+        ClarificationSession previous = ClarificationSession.builder()
+                .project(project)
+                .goalText("1차 골")
+                .sessionNumber(number)
+                .status(SessionStatus.FROZEN)
+                .openedByEmployeeId(planner.getId())
+                .build();
+        when(sessionRepository.findFirstByProjectIdOrderBySessionNumberDesc(projectId))
+                .thenReturn(Optional.of(previous));
+        return previous;
+    }
+
+    @Test
+    void userSessionCreatesOpenSessionPreservingChangeNoteAndParent() {
+        ClarificationSession previous = previousSession(3);
+        when(employeeRepository.findByUserIdAndRole(userId, Role.PLANNER)).thenReturn(List.of(planner));
+        when(jobGradeRepository.findById(leadGrade.getId())).thenReturn(Optional.of(leadGrade));
+
+        ClarificationSession session = service.openUserSession(projectId, userId, "요금제 문구 수정 요청", List.of());
+
+        assertEquals(4, session.getSessionNumber()); // max+1 승계
+        assertEquals(previous.getId(), session.getParentSessionId()); // 진화 연결
+        assertEquals(SessionStatus.OPEN, session.getStatus());
+        assertEquals(userId, session.getOpenedByUserId()); // 파이프라인 개설과 구분
+        assertNull(session.getOpenedByEmployeeId());
+        assertEquals("요금제 문구 수정 요청", session.getGoalText()); // 개설 취지 원문 보존
+        verify(discussionMessageRepository).save(any(DiscussionMessage.class)); // 대표 PLANNER 접수 기록
+    }
+
+    @Test
+    void userSessionWithAttachmentsOnlyIsAllowed() {
+        when(employeeRepository.findByUserIdAndRole(userId, Role.PLANNER)).thenReturn(List.of(planner));
+        when(jobGradeRepository.findById(leadGrade.getId())).thenReturn(Optional.of(leadGrade));
+
+        ClarificationSession session = service.openUserSession(projectId, userId, null, List.of(md("화면 문구 시안")));
+
+        assertEquals(SessionStatus.OPEN, session.getStatus()); // changeNote 없어도 첨부 단독 허용(§28.7-1)
+        assertNull(session.getGoalText());
+        assertEquals(1, session.getAttachments().size());
+        assertEquals("PARSED", session.getAttachments().get(0).parseStatus());
+    }
+
+    @Test
+    void userSessionWithoutNoteAndAttachmentsIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.openUserSession(projectId, userId, "  ", List.of()));
+    }
+
+    @Test
+    void userSessionWhileActiveSessionExistsIsRejected() {
+        when(sessionRepository.existsByProjectIdAndStatusIn(projectId,
+                List.of(SessionStatus.OPEN, SessionStatus.WAITING_CLIENT))).thenReturn(true);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.openUserSession(projectId, userId, "수정 요청", List.of()));
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void userSessionByNonOwnerIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.openUserSession(projectId, UUID.randomUUID(), "수정 요청", List.of()));
+    }
+
+    @Test
+    void userSessionWithoutPlannerEmployeeStillCreatesSession() {
+        // 직원 부재 조직 — 접수 기록만 생략, 세션 개설은 유효(사용자 개설 경로)
+        when(employeeRepository.findByUserIdAndRole(userId, Role.PLANNER)).thenReturn(List.of());
+
+        ClarificationSession session = service.openUserSession(projectId, userId, "수정 요청", List.of());
+
+        assertEquals(SessionStatus.OPEN, session.getStatus());
+        verify(discussionMessageRepository, never()).save(any());
+    }
+
+    // ==================== REQ-005 세션 취소(§28.6) ====================
+
+    private ClarificationSession cancelFixture(SessionStatus status) {
+        ClarificationSession session = ClarificationSession.builder()
+                .project(project)
+                .goalText("블로그 사이트")
+                .sessionNumber(1)
+                .status(status)
+                .openedByEmployeeId(planner.getId())
+                .build();
+        session.setId(UUID.randomUUID());
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        return session;
+    }
+
+    @Test
+    void cancelOpenSessionMarksCancelledWithClosedAtAndAuditLog() {
+        ClarificationSession session = cancelFixture(SessionStatus.OPEN);
+
+        ClarificationSession result = service.cancelSession(session.getId(), userId);
+
+        assertEquals(SessionStatus.CANCELLED, result.getStatus());
+        assertNotNull(result.getClosedAt());
+        verify(discussionMessageRepository).save(any(DiscussionMessage.class)); // Audit 기록
+    }
+
+    @Test
+    void cancelWaitingClientSessionIsAllowed() {
+        ClarificationSession session = cancelFixture(SessionStatus.WAITING_CLIENT);
+
+        ClarificationSession result = service.cancelSession(session.getId(), userId);
+
+        assertEquals(SessionStatus.CANCELLED, result.getStatus());
+    }
+
+    @Test
+    void cancelFrozenSessionIsRejected() {
+        ClarificationSession session = cancelFixture(SessionStatus.FROZEN);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.cancelSession(session.getId(), userId));
+        assertTrue(e.getMessage().contains("Frozen"));
+    }
+
+    @Test
+    void cancelReviewSessionIsRejected() {
+        ClarificationSession session = cancelFixture(SessionStatus.REVIEW);
+
+        assertThrows(IllegalStateException.class, () -> service.cancelSession(session.getId(), userId));
+    }
+
+    @Test
+    void cancelByNonOwnerIsRejected() {
+        ClarificationSession session = cancelFixture(SessionStatus.OPEN);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cancelSession(session.getId(), UUID.randomUUID()));
+    }
+
+    @Test
+    void cancelMissingSessionIsNotFound() {
+        UUID missing = UUID.randomUUID();
+        when(sessionRepository.findById(missing)).thenReturn(Optional.empty());
+
+        assertThrows(NoSuchElementException.class, () -> service.cancelSession(missing, userId));
+    }
 }
