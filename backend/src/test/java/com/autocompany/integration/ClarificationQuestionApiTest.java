@@ -11,6 +11,7 @@ import com.autocompany.service.ClarificationQuestionService;
 import com.autocompany.service.ClarificationQuestionService.RemainingAnswerView;
 import com.autocompany.service.ClarificationQuestionService.RemainingAnswersException;
 import com.autocompany.service.ClarificationSessionService;
+import com.autocompany.service.RequirementSetService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -41,6 +42,9 @@ public class ClarificationQuestionApiTest {
 
     @MockBean
     private ClarificationQuestionService questionService;
+
+    @MockBean
+    private RequirementSetService requirementSetService;
 
     private ClarificationQuestion sampleQuestion(int order) {
         UUID sessionId = UUID.randomUUID();

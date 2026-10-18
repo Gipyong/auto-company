@@ -31,6 +31,7 @@ public class ClarificationQuestionService {
     private final ClarificationQuestionRepository questionRepository;
     private final ClarificationSessionRepository sessionRepository;
     private final DiscussionMessageRepository discussionMessageRepository;
+    private final ClarificationReviewChainService reviewChainService;
     private final ClarificationExpertSignalDetector signalDetector;
 
     // ==================== 질문 구성 ====================
@@ -75,12 +76,17 @@ public class ClarificationQuestionService {
             order++;
         }
 
-        session.setStatus(SessionStatus.WAITING_CLIENT);
-        sessionRepository.save(session);
+        // §28.4: 질문은 체인 통과 후에만 waiting_client 전송 — 통과 못하면 OPEN 유지(재협의)
+        boolean passed = reviewChainService.runReviewChain(sessionId);
+        if (passed) {
+            session.setStatus(SessionStatus.WAITING_CLIENT);
+            session = sessionRepository.save(session);
+        }
         discussionMessageRepository.save(DiscussionMessage.builder()
                 .project(session.getProject())
                 .senderEmployeeId(authorId)
-                .content("질문 " + composed.size() + "개 준비 — 고객 응답 대기 큐 진입(§28.5)")
+                .content("질문 " + composed.size() + "개 구성 — 검토 체인 "
+                        + (passed ? "통과 → 고객 응답 대기 큐(§28.5)" : "보류 → 재검토(OPEN 유지)"))
                 .messageType(MessageType.DISCUSSION)
                 .build());
         return composed;
@@ -261,10 +267,15 @@ public class ClarificationQuestionService {
         }
     }
 
-    // ==================== 조회 ====================
+    // ==================== 조회 (§28.4: 체인 통과 후에만 표시) ====================
 
     @Transactional(readOnly = true)
     public List<ClarificationQuestion> getQuestions(UUID sessionId) {
+        ClarificationSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new NoSuchElementException("Clarification session not found: " + sessionId));
+        if (session.getStatus() == SessionStatus.OPEN) {
+            throw new IllegalStateException("Questions are not released yet — pending review chain (§28.4)");
+        }
         return questionRepository.findBySessionIdOrderByDisplayOrderAsc(sessionId);
     }
 

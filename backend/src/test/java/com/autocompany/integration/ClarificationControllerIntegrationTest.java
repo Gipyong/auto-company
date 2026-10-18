@@ -6,6 +6,7 @@ import com.autocompany.entity.ClarificationSession.SessionStatus;
 import com.autocompany.entity.Project;
 import com.autocompany.service.ClarificationQuestionService;
 import com.autocompany.service.ClarificationSessionService;
+import com.autocompany.service.RequirementSetService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -37,6 +38,9 @@ public class ClarificationControllerIntegrationTest {
 
     @MockBean
     private ClarificationQuestionService questionService;
+
+    @MockBean
+    private RequirementSetService requirementSetService;
 
     private ClarificationSession sampleSession(int number, SessionStatus status) {
         UUID projectId = UUID.randomUUID();
