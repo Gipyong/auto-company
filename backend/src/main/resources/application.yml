@@ -41,6 +41,11 @@ clarification:
   allow_user_opened_sessions: true      # §28.6 동시 open|waiting_client 1개; 초과 409
   attachments: { max_count_per_goal: 10, max_file_size_mb: 50, native_formats: [md, txt, csv, json, pdf], parser_formats: [xlsx, pptx, docx, hwp], image_requires_vision: true } # REQ-004
 
+# §23·§29 자율 오케스트레이션(ORCH-001/002) — Mock 분해·배정, 재계획 한도
+orchestrator:
+  auto_assignment: true
+  replan_attempts_per_requirement_set: 2
+
 logging:
   level:
     root: INFO

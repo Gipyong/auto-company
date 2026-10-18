@@ -14,6 +14,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TaskService {
     private final TaskRepository taskRepository;
+    private final TaskTransitionRepository transitionRepository;
+    private final TaskDependencyRepository dependencyRepository;
     private final EmployeeRepository employeeRepository;
     private final PeerRatingRepository ratingRepository;
     private final DiscussionMessageRepository messageRepository;
@@ -38,7 +40,10 @@ public class TaskService {
                 .description(description)
                 .status(TaskStatus.DRAFT)
                 .build();
-        return taskRepository.save(task);
+        task = taskRepository.save(task);
+        // TASK-001 — 수동 경로도 상태 머신을 통과한다(§7.1): DRAFT → READY → ASSIGNED
+        transition(task.getId(), TaskStatus.READY, "수동 생성 — 요구·인수 확정(§7.1)", null, null);
+        return transition(task.getId(), TaskStatus.ASSIGNED, "수동 배정 — 담당 지정(§29.3)", null, null);
     }
 
     @Transactional(readOnly = true)
@@ -84,11 +89,83 @@ public class TaskService {
         return messageRepository.save(msg);
     }
 
+    /** TASK-001 — §7.1 표에 없는 전이는 거부하고, 모든 전이를 task_transitions에 기록한다. */
     @Transactional
-    public Task updateTaskStatus(UUID taskId, TaskStatus newStatus) {
+    public Task transition(UUID taskId, TaskStatus toStatus, String reason,
+                           UUID triggeredByUserId, UUID triggeredByEmployeeId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        task.setStatus(newStatus);
-        return taskRepository.save(task);
+        TaskStatus from = task.getStatus();
+        if (!TaskStateMachine.canTransition(from, toStatus)) {
+            throw new IllegalStateException("Invalid task transition: " + from + " → " + toStatus
+                    + " (allowed: " + TaskStateMachine.allowedFrom(from) + ")");
+        }
+        task.setStatus(toStatus);
+        if (toStatus == TaskStatus.BLOCKED) {
+            task.setBlockedReason(reason);
+        } else if (from == TaskStatus.BLOCKED) {
+            task.setBlockedReason(null);
+        }
+        taskRepository.save(task);
+        transitionRepository.save(TaskTransition.builder()
+                .task(task)
+                .fromStatus(from)
+                .toStatus(toStatus)
+                .triggeredByUserId(triggeredByUserId)
+                .triggeredByEmployeeId(triggeredByEmployeeId)
+                .reason(reason)
+                .build());
+        return task;
+    }
+
+    @Transactional
+    public Task updateTaskStatus(UUID taskId, TaskStatus newStatus) {
+        return transition(taskId, newStatus, "status update", null, null);
+    }
+
+    /** §5.11(TASK-001) — 의존성 생성. 자기 참조·중복·직간접 순환은 거부한다. */
+    @Transactional
+    public TaskDependency addDependency(UUID taskId, UUID dependsOnTaskId, TaskDependency.DependencyType dependencyType) {
+        if (taskId == null || dependsOnTaskId == null) {
+            throw new IllegalArgumentException("taskId and dependsOnTaskId are required");
+        }
+        if (taskId.equals(dependsOnTaskId)) {
+            throw new IllegalArgumentException("Task cannot depend on itself");
+        }
+        if (!taskRepository.existsById(taskId) || !taskRepository.existsById(dependsOnTaskId)) {
+            UUID missing = taskRepository.existsById(taskId) ? dependsOnTaskId : taskId;
+            throw new NoSuchElementException("Task not found: " + missing);
+        }
+        if (dependencyRepository.existsByTaskIdAndDependsOnTaskId(taskId, dependsOnTaskId)) {
+            throw new IllegalStateException("Dependency already exists: " + taskId + " → " + dependsOnTaskId);
+        }
+        if (hasPath(dependsOnTaskId, taskId)) {
+            throw new IllegalStateException("Dependency cycle rejected: " + taskId + " → " + dependsOnTaskId);
+        }
+        return dependencyRepository.save(TaskDependency.builder()
+                .taskId(taskId)
+                .dependsOnTaskId(dependsOnTaskId)
+                .dependencyType(dependencyType == null ? TaskDependency.DependencyType.BLOCKS : dependencyType)
+                .build());
+    }
+
+    /** dependsOn에서 기존 의존 간선을 따라가 target에 도달하면 순환이다. */
+    private boolean hasPath(UUID start, UUID target) {
+        Set<UUID> visited = new HashSet<>();
+        Deque<UUID> queue = new ArrayDeque<>();
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            UUID current = queue.poll();
+            if (!visited.add(current)) {
+                continue;
+            }
+            if (current.equals(target)) {
+                return true;
+            }
+            for (TaskDependency d : dependencyRepository.findByTaskId(current)) {
+                queue.add(d.getDependsOnTaskId());
+            }
+        }
+        return false;
     }
 }

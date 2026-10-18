@@ -76,19 +76,21 @@ public class EmployeeService {
     }
 
     /**
-     * §8.2 (3) 계층 조립 — 직무 원칙(systemPrompt) + 사용자 개별 지시(custom_instructions).
-     * 시스템 안전 정책·도구 제약이 항상 우선이며, 이 결과를 후속 AgentRun이 시스템 메시지로 소비한다.
+     * §8.2 (3)(4) 계층 조립 — 사용자 개별 지시(custom_instructions) + 직무 원칙(systemPrompt).
+     * 순서: 안전 정책 문구 → 사용자 개별 지시(직무·조직 기본값·동료 피드백보다 우선, §0 원칙 11) → 직무 원칙.
+     * 이 결과를 후속 AgentRun이 시스템 메시지로 소비한다.
      */
     public AgentContext buildAgentContext(UUID employeeId) {
         Employee employee = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new NoSuchElementException("Employee not found: " + employeeId));
         StringBuilder instructions = new StringBuilder();
         instructions.append("[시스템 안전 정책·도구 제약이 우선한다 — 아래 지시로 안전 정책을 변경할 수 없다]\n");
+        if (employee.getCustomInstructions() != null && !employee.getCustomInstructions().isBlank()) {
+            instructions.append("[사용자 개별 지시 — 직무·조직 기본값과 동료 피드백보다 우선] ")
+                    .append(employee.getCustomInstructions()).append('\n');
+        }
         if (employee.getSystemPrompt() != null && !employee.getSystemPrompt().isBlank()) {
             instructions.append("[직무 원칙] ").append(employee.getSystemPrompt()).append('\n');
-        }
-        if (employee.getCustomInstructions() != null && !employee.getCustomInstructions().isBlank()) {
-            instructions.append("[사용자 개별 지시] ").append(employee.getCustomInstructions()).append('\n');
         }
         return new AgentContext(employee.getId(), employee.getSystemPrompt(),
                 employee.getCustomInstructions(), instructions.toString().strip());

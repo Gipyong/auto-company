@@ -214,9 +214,13 @@ public class EmployeeServiceTest {
 
         EmployeeService.AgentContext context = service.buildAgentContext(id);
 
-        assertTrue(context.instructions().contains("시스템 안전 정책")); // 안전 정책 우선 문구(§8.2)
-        assertTrue(context.instructions().contains("직무 원칙: 작은 단위로 커밋한다"));
-        assertTrue(context.instructions().contains("[사용자 개별 지시] 항상 테스트 먼저 작성한다")); // §8.2 (3) 계층
+        String instructions = context.instructions();
+        assertTrue(instructions.contains("시스템 안전 정책")); // 안전 정책 우선 문구(§8.2)
+        assertTrue(instructions.contains("직무 원칙: 작은 단위로 커밋한다"));
+        assertTrue(instructions.contains("항상 테스트 먼저 작성한다")); // §8.2 (3) 계층
+        // §0 원칙 11 — 사용자 개별 지시가 직무 원칙보다 앞서고(우선), 우선순위 문구를 포함한다
+        assertTrue(instructions.indexOf("[사용자 개별 지시") < instructions.indexOf("[직무 원칙]"));
+        assertTrue(instructions.contains("동료 피드백보다 우선"));
         assertEquals("항상 테스트 먼저 작성한다", context.customInstructions());
     }
 

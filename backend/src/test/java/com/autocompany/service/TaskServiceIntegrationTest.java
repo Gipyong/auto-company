@@ -24,6 +24,8 @@ public class TaskServiceIntegrationTest {
     @Autowired private ProjectRepository projectRepository;
     @Autowired private PeerRatingRepository ratingRepository;
     @Autowired private JobGradeRepository jobGradeRepository;
+    @Autowired private TaskTransitionRepository taskTransitionRepository;
+    @Autowired private TaskDependencyRepository taskDependencyRepository;
 
     private User user;
     private Employee assignee;
@@ -71,9 +73,13 @@ public class TaskServiceIntegrationTest {
         Task found = taskService.getTask(task.getId()).orElseThrow();
         assertEquals("로그인 버그 수정", found.getTitle());
         assertEquals("Fix null pointer exception", found.getDescription());
-        assertEquals(TaskStatus.DRAFT, found.getStatus());
+        // TASK-001 — 수동 경로도 상태 머신 통과(§7.1): DRAFT→READY→ASSIGNED
+        assertEquals(TaskStatus.ASSIGNED, found.getStatus());
         assertEquals(assignee.getId(), found.getAssignee().getId());
         assertEquals(project.getId(), found.getProject().getId());
+        assertEquals(List.of(TaskStatus.READY, TaskStatus.ASSIGNED),
+                taskTransitionRepository.findByTaskIdOrderByCreatedAtAsc(task.getId())
+                        .stream().map(TaskTransition::getToStatus).toList());
     }
 
     @Test
@@ -91,12 +97,41 @@ public class TaskServiceIntegrationTest {
     }
 
     @Test
-    public void testUpdateTaskStatus() {
+    public void testUpdateTaskStatusValidatesTransitionsAndRecordsHistory() {
         Task task = taskService.assignTask(project.getId(), assignee.getId(),
                 TaskType.TASK, "t", "p");
 
+        // §7.1 — ASSIGNED→IN_PROGRESS 유효
         Task updated = taskService.updateTaskStatus(task.getId(), TaskStatus.IN_PROGRESS);
         assertEquals(TaskStatus.IN_PROGRESS, updated.getStatus());
+
+        // §7.1 — IN_PROGRESS→DONE 무효(REVIEW 경유 필요)
+        assertThrows(IllegalStateException.class,
+                () -> taskService.updateTaskStatus(task.getId(), TaskStatus.DONE));
+
+        // TASK-001 — 모든 전이가 task_transitions에 기록된다
+        assertEquals(List.of(TaskStatus.READY, TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS),
+                taskTransitionRepository.findByTaskIdOrderByCreatedAtAsc(task.getId())
+                        .stream().map(TaskTransition::getToStatus).toList());
+    }
+
+    @Test
+    public void testAddDependencyRejectsDuplicateSelfAndCycle() {
+        Task a = taskService.assignTask(project.getId(), assignee.getId(), TaskType.TASK, "a", "p");
+        Task b = taskService.assignTask(project.getId(), assignee.getId(), TaskType.TEST, "b", "p");
+
+        taskService.addDependency(b.getId(), a.getId(), TaskDependency.DependencyType.BLOCKS);
+        assertEquals(1, taskDependencyRepository.findByTaskId(b.getId()).size());
+
+        // 중복 간선 거부
+        assertThrows(IllegalStateException.class,
+                () -> taskService.addDependency(b.getId(), a.getId(), TaskDependency.DependencyType.BLOCKS));
+        // 순환 거부 — a→b를 추가하면 b→a와 직간접 순환
+        assertThrows(IllegalStateException.class,
+                () -> taskService.addDependency(a.getId(), b.getId(), TaskDependency.DependencyType.BLOCKS));
+        // 자기 참조 거부
+        assertThrows(IllegalArgumentException.class,
+                () -> taskService.addDependency(a.getId(), a.getId(), TaskDependency.DependencyType.BLOCKS));
     }
 
     @Test

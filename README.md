@@ -1,11 +1,11 @@
 # 🤖 AutoCompany (AI 가상 회사 시스템)
 
-**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.8)
+**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.9)
 
 ## 구현 상태
 
 ### ✅ 구현 완료
-- **설계 문서**: `docs/DESIGN.md` (v1.8, Section 0~30)
+- **설계 문서**: `docs/DESIGN.md` (v1.9, Section 0~30)
 - **Java Spring Boot 백엔드**: `backend/` (Entity, Repository, Service, Controller, Config — JSON API 전용)
 - **SPA 콘솔**: `frontend/` (React + TypeScript + Vite, nginx `front` 컨테이너가 정적 서빙 + `/api` 프록시)
 - **테스트 코드**: `backend/src/test/`, `frontend/src/*.test.ts` (Vitest)
@@ -21,9 +21,11 @@
 - 직원 직급 배정 (`PATCH /api/v1/employees/{id}/grade`)
 - 직원 평가 리포트 (`GET /api/v1/employees/{id}/evaluations` — 피드백 이력·집계, 직급 변경 참고용)
 - 모델 Provider/Profile 관리 (`GET/POST /api/v1/model-providers`, `GET/POST /api/v1/model-profiles`)
-- 업무 할당 (`POST /api/v1/tasks`)
-- 직급별 모델 풀 기반 Cost-Performance Router (PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)
-- 피드백 평가 (`POST /api/v1/ratings` — 근거 참조 `evidenceRefs` 포함, 자동 승급 없음)
+- **업무 상태 머신·전이·의존성 (TASK-001 — §7.1 표 기반 `TaskStateMachine`, 전이 기록 `task_transitions`, 의존성 `task_dependencies`(BLOCKS|RELATES_TO·순환 거부), `TaskService.transition`/`updateTaskStatus`/`addDependency`)** 
+- **자율 오케스트레이션 (ORCH-001/002 — §5.27·§29: 동결 RequirementSet 트리거 `POST /requirements/{id}/trigger`(409: NOT_FROZEN/ALREADY_DECOMPOSED/REPLAN_LIMIT), 결정적 Mock 분해(Epic→Story→구현 TASK+검증 TEST·TEST→TASK BLOCKS·비기능→Epic 직속 TASK), task_types 자동 배정(최소 미완료·이름순, 실패 시 BLOCKED+사유), 재계획(FIRST/REPLAN 모드, 기본 2회 한도), 조회 `GET /projects/{id}/orchestration`(cycle·tasks·latestFrozen), 결정 근거 `OrchestratorCycle` 기록, V9 마이그레이션)**
+- **웹 콘솔 입력 표면 정리 (WEB-004 — §5.20·§8.2·§17: 업무 추가/평가 제출 UI 제거, 콘솔에 [분해·배정 실행] 버튼+오케스트레이션 요약 카드, 직원별 커스텀 지시 우선순위 명시(시스템 안전 정책 > 사용자 개별 지시 > 직무·조직 기본값 > 동료 피드백))**
+- Cost-Performance Router (직급별 모델 풀, PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)
+- 피드백 평가 (`POST /api/v1/ratings` — 근거 `evidenceRefs`, 자동 승급 없음, 콘솔은 리포트 조회만)
 - 요구 명확화 세션 기초 (REQ-001 — 골 접수 `POST /api/v1/projects/{id}/goal`, 파이프라인 세션 open 개설(PLANNER), 세션 조회 2종, 질문 수신함 `GET /users/{userId}/pending-sessions`)
 - 클라리피케이션 질문·답변 (REQ-002 — 질문 구성 `POST /clarification-sessions/{id}/questions`(개별 체크박스·기타·max_questions 상한, 0단계 전문성 신호 선식별 기록), 질문 조회 `GET .../questions`, 구조화 답변 `POST .../answers`(유형별 검증·skipped, 필수 미답 409+남은 질문, 전체 답변 시 review 전환))
 - 검토 체인·동결·요구사항 기록 (REQ-003 — 검토 체인 통과 후에만 질문 공개(open에서 재확인), 동결 `POST /clarification-sessions/{id}/freeze`(REVIEW만 가능, frozen 재동결 409 — 변경은 새 세션 REQ-005), RequirementSet v1 기록 생성(기능/비기능/제약/제외/리스크 + 항목 source 태깅 client_declared/client_answered/employee_derived), 누적 기록 `GET /projects/{id}/requirements`(버전 내림차순, 이전 FROZEN은 superseded 보존))
@@ -31,7 +33,7 @@
 - 웹 콘솔 명확화 UI (UI-002 — 지시 탭(구 "고객 골"): 세션 수신함(WAITING_CLIENT 상단 강조+사이드바 배지)·지시 접수(텍스트+첨부 파일→base64 인코딩 제출)·세션 탐색(질문 폼: 단일/복수 선택·기타 직접 입력·단답·자유 서술·수치·건너뛰기, 답변 제출 후 동결 버튼, 동결 시 5그룹 요구사항+근거·가정 표시))
 - 사용자 개설 세션·취소·동결 경로 (REQ-005 — 사용자 개설 진화 세션 `POST /api/v1/projects/{id}/clarification-sessions`(변경 원문 `changeNote`+첨부, `session_number` 승계+`parent_session_id` 연결, 활성 세션 중복 409), 세션 취소 `POST /api/v1/clarification-sessions/{id}/cancel`(open|waiting_client만, Audit 기록, frozen 불가), 동결 확장: 사용자 개설 세션 질문 0개 즉시 동결(검토 체인은 기록 승인만 수행, `frozen_by` 기록), `clientDirective=true`로 waiting_client에서 "이 정도면 진행" 동결(미답 질문은 가정으로 기록). 웹 콘솔: 새 세션 개설 폼·세션 취소 버튼·"이 정도면 진행" 동결 버튼)
 - 외부 고객 중계 (ORG-003 — Client 명부 `POST /api/v1/clients`(organizationId·displayName 필수)·`GET /clients?organizationId=`·`GET/PATCH /clients/{id}`(archived 전환, 기존 연결 기록 보존·신규 중계 연결 409), `Project.clientId`·`ClarificationSession.clientId` 연결(세션 생성 API `clientId` 지정 시 프로젝트 고객 override, 미지정 시 상속), 중계 세션 개설·동결 감사 로그("외부 고객 {이름} 중계 기록, 원문 보존"), 동결 기록 고객 원천 항목 source `client_relayed`+근거 "외부 고객 {이름} 중계 — ". v1.8 콘솔에서는 휴면(백엔드·테스트 유지, 콘솔은 `clientId`를 항상 null로 생성 — 외부 고객 카드 없음))
-- 직원 커스텀 지시 (EMP-001 — `customInstructions` 필드(V7 `employees.custom_instructions` TEXT), 직원 생성 `POST /employees`·부분 갱신 `PATCH /employees/{id}`(`{name?, customInstructions?}` — null 유지·빈 문자열 지우기, 최대 4000자 초과 400 §26), §8.2 (3) 계층 조립 `EmployeeService.buildAgentContext`(직무 원칙+사용자 개별 지시+안전 정책 우선 문구; 후속 AgentRun 컨텍스트 소비 대상). 웹 콘솔: 직원 상세에서 지시 편집·저장)
+- 직원 커스텀 지시 (EMP-001 — `customInstructions` 필드(V7 `employees.custom_instructions` TEXT), 직원 생성 `POST /employees`·부분 갱신 `PATCH /employees/{id}`(`{name?, customInstructions?}` — null 유지·빈 문자열 지우기, 최대 4000자 초과 400 §26), §8.2 (3) 계층 조립 `EmployeeService.buildAgentContext`(시스템 안전 정책 > 사용자 개별 지시 > 직무·조직 기본값 > 동료 피드백(참고); 후속 AgentRun 컨텍스트 소비 대상). 웹 콘솔: 직원 상세에서 지시 편집·저장)
 - 콘솔 SPA 분리 (WEB-002 — 콘솔을 `frontend/`(React+TS+Vite)로 이전, `front` 컨테이너(nginx:1.27)가 `/` 정적 서빙(SPA fallback)+`/api`→`web:8080` 프록시, 백엔드 정적 콘솔 제거(`/` 404 — `BackendNoStaticConsoleTest`), Dockerfile 서비스 디렉터리별 배치(루트는 `docker-compose.yml`만), 프론트 단위 테스트 Vitest `npm test`)
 - 지시 창구 통합 콘솔 (WEB-003 — 좌측 사이드바 IA(지시/직원/직급/모델), localStorage 제거(고정 단일 조직·사용자 상수), 지시 탭 = 단일 프롬프트 창구([묻기] `POST /ask` / [지시하기] 프로젝트 생성+첫 지시 접수) + 프로젝트 목록·상세(세션·질문·답변·동결·진화·업무·평가), 프로젝트 조회 API `GET /projects?userId=`(최신순)·`GET /projects/{id}`·`GET /projects/{id}/tasks`, 목록 우선 UX(빈 목록 중앙 생성 CTA·[+] 폼 토글), 메시지·CEO Ask UI 제거(백엔드 API 유지))
 - 토론 (`POST /api/v1/messages` — v1.8 콘솔 미노출)
@@ -52,7 +54,7 @@ docker compose ps
 # 3. 브라우저에서 웹 콘솔 접속 (SPA — front 컨테이너, 3000)
 open http://localhost:3000
 #  → 첫 접속 시 기본 조직·템플릿 자동 구성 (별도 연결 절차 없음)
-#  → 지시 탭: 프롬프트 입력 → [묻기] 또는 [지시하기] → 프로젝트·세션 진행
+#  → 지시 탭: 프롬프트 입력 → [묻기] 또는 [지시하기] → 프로젝트·세션 진행 → [동결] → [분해·배정 실행] → 업무 트리·배정 확인
 #  → 직원 탭: 팀 만들기·배치, 직급/모델 탭에서 조직 구성 (모바일 브라우저도 동일 주소)
 #  → API 직접 호출은 백엔드(8080) 그대로 사용 가능: http://localhost:8080/api/v1/...
 
