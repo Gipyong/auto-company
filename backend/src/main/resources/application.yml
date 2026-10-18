@@ -33,6 +33,14 @@ ai:
     grade:
       selection-mode: priority  # priority | task_based | budget_optimized
 
+clarification:
+  max_questions_per_session: 5
+  review_chain_roles: [PLANNER, ARCHITECT, QA_ENGINEER, SECURITY_DEVOPS, PROJECT_MANAGER] # §28.4 체인 상수(REQ-003)
+  allow_other_by_default: true
+  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note, goal_attachments, client_relayed]
+  allow_user_opened_sessions: true      # §28.6 동시 open|waiting_client 1개; 초과 409
+  attachments: { max_count_per_goal: 10, max_file_size_mb: 50, native_formats: [md, txt, csv, json, pdf], parser_formats: [xlsx, pptx, docx, hwp], image_requires_vision: true } # REQ-004
+
 logging:
   level:
     root: INFO

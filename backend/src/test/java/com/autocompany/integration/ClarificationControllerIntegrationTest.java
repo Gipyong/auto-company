@@ -1,0 +1,127 @@
+package com.autocompany.integration;
+
+import com.autocompany.controller.ClarificationController;
+import com.autocompany.entity.ClarificationSession;
+import com.autocompany.entity.ClarificationSession.SessionStatus;
+import com.autocompany.entity.Project;
+import com.autocompany.service.ClarificationSessionService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(ClarificationController.class)
+public class ClarificationControllerIntegrationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private ClarificationSessionService sessionService;
+
+    private ClarificationSession sampleSession(int number, SessionStatus status) {
+        UUID projectId = UUID.randomUUID();
+        ClarificationSession session = ClarificationSession.builder()
+                .project(Project.builder().id(projectId).name("블로그 사이트").build())
+                .goalText("블로그 사이트 만들어줘")
+                .sessionNumber(number)
+                .status(status)
+                .openedByEmployeeId(UUID.randomUUID())
+                .build();
+        session.setId(UUID.randomUUID());
+        return session;
+    }
+
+    @Test
+    public void goalSubmissionReturns201WithSession() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘")))
+                .thenReturn(sampleSession(1, SessionStatus.OPEN));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"goalText\":\"블로그 사이트 만들어줘\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sessionNumber").value(1))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    public void goalSubmissionMissingFieldsReturns400() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.openPipelineSession(eq(projectId), any(), any()))
+                .thenThrow(new IllegalArgumentException("goalText is required"));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void duplicateActiveGoalReturns409() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.openPipelineSession(eq(projectId), any(), any()))
+                .thenThrow(new IllegalStateException("Active clarification session already exists"));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"goalText\":\"블로그 사이트 만들어줘\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    public void getSessionsForProjectReturnsList() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.getSessionsByProject(projectId))
+                .thenReturn(List.of(sampleSession(1, SessionStatus.WAITING_CLIENT)));
+
+        mockMvc.perform(get("/api/v1/projects/{projectId}/clarification-sessions", projectId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("WAITING_CLIENT"));
+    }
+
+    @Test
+    public void getSessionReturns404WhenMissing() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(sessionService.getSession(id)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/clarification-sessions/{id}", id))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void pendingSessionsInboxEndpointReturnsList() throws Exception {
+        UUID userId = UUID.randomUUID();
+        when(sessionService.getPendingSessionsForUser(userId))
+                .thenReturn(List.of(sampleSession(1, SessionStatus.WAITING_CLIENT)));
+
+        mockMvc.perform(get("/api/v1/users/{userId}/pending-sessions", userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].goalText").value("블로그 사이트 만들어줘"));
+    }
+
+    @Test
+    public void pendingSessionsInboxEndpointEmptyWhenNoQueue() throws Exception {
+        when(sessionService.getPendingSessionsForUser(any(UUID.class))).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/users/{userId}/pending-sessions", UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+}

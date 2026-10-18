@@ -14,4 +14,6 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
     List<Employee> findByUserId(UUID userId);
 
     List<Employee> findByGradeId(UUID gradeId);
+
+    List<Employee> findByUserIdAndRole(UUID userId, Role role);
 }
