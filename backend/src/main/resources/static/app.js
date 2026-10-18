@@ -2,7 +2,8 @@
  *
  * 정적 SPA (Vanilla JS, 외부 의존성 없음).
  * 현재 구현된 API만 사용한다: TEMPLATE import, employees, grades(+pool),
- * model providers/profiles, projects, tasks, ratings, messages, ask.
+ * model providers/profiles, projects, tasks, ratings, messages, ask,
+ * 명확화 파이프라인(골 접수+첨부, 세션 수신함, 질문·답변·동결 — §28/§28.7).
  * 설계 문서 §17 "Web Console (초기 UI)" 참조.
  */
 "use strict";
@@ -98,6 +99,10 @@ const state = {
   editingGradeId: null,
   poolGradeId: null,
   pool: [], // [{ profileId }] — 풀 우선순위 순
+  pendingSessions: [], // §28.5 수신함(OPEN+WAITING_CLIENT)
+  sessions: [], // 프로젝트별 세션 목록
+  currentSession: null,
+  questions: [], // 현재 세션 질문
 };
 
 function persist() {
@@ -157,6 +162,7 @@ async function refreshAll() {
   renderSelects();
   renderProjects();
   renderTasks();
+  await loadPendingSessions(); // 세션 큐 강조(§28.5)
 }
 
 /* ==================== 시작(설정) ==================== */
@@ -762,6 +768,353 @@ async function ask() {
   }
 }
 
+/* ==================== 고객 골 (§28 명확화 파이프라인) ==================== */
+
+const SESSION_BADGE = {
+  OPEN: "",
+  WAITING_CLIENT: "hot", // 강조 — 응답 대기
+  REVIEW: "amber",
+  FROZEN: "green",
+  CANCELLED: "red",
+};
+const statusBadge = (s) => `<span class="badge ${SESSION_BADGE[s] || ""}">${esc(s)}</span>`;
+
+async function loadPendingSessions() {
+  if (!state.ctx) { state.pendingSessions = []; renderInbox(); return; }
+  try {
+    state.pendingSessions = await api("GET",
+      `/api/v1/users/${encodeURIComponent(state.ctx.userId)}/pending-sessions`);
+  } catch { state.pendingSessions = []; }
+  renderInbox();
+}
+
+function renderInbox() {
+  const box = $("#pendingSessions");
+  if (!box) return;
+  const items = state.pendingSessions || [];
+  const waiting = items.filter((s) => s.status === "WAITING_CLIENT");
+  const tabBadge = $("#goalTabBadge");
+  if (tabBadge) {
+    tabBadge.textContent = String(waiting.length);
+    tabBadge.hidden = waiting.length === 0;
+  }
+  const cnt = $("#inboxCount");
+  if (cnt) { cnt.textContent = String(items.length); cnt.hidden = items.length === 0; }
+  box.innerHTML = items.length
+    ? items.map((s) => `
+        <div class="item click ${s.status === "WAITING_CLIENT" ? "hot" : ""}" data-session="${esc(s.id)}">
+          <div class="title">${esc(projectName(s.projectId))} 세션 #${s.sessionNumber} ${statusBadge(s.status)}</div>
+          <div class="sub">${esc((s.goalText || "(첨부 중심 접수)").slice(0, 90))}</div>
+          <div class="sub">${fmtDate(s.createdAt)}</div>
+        </div>`).join("")
+    : `<div class="item"><div class="sub">대기 세션이 없습니다. 아래에서 골을 접수하세요.</div></div>`;
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(new Error(`파일을 읽지 못했습니다: ${file.name}`));
+    r.readAsDataURL(file);
+  });
+}
+
+function renderGoalFileList() {
+  const files = Array.from(($("#goalFiles") || {}).files || []);
+  $("#goalFileList").innerHTML = files.length
+    ? files.map((f) => `<span class="chip">${esc(f.name)} (${Math.max(1, Math.round(f.size / 1024))}KB)</span>`).join("")
+    : "";
+}
+
+async function submitGoal() {
+  if (!requireCtx()) return;
+  const projectId = $("#goalProject").value;
+  const goalText = $("#goalText").value.trim();
+  const files = Array.from(($("#goalFiles") || {}).files || []);
+  if (!projectId) { toast("프로젝트를 먼저 생성하세요. ('업무' 탭)", "err"); showTab("work"); return; }
+  if (!goalText && !files.length) {
+    toast("골 텍스트 또는 첨부 중 최소 한 가지가 필요합니다. (§28.7-1)", "err");
+    return;
+  }
+  const btn = $("#btnGoalSubmit");
+  busy(btn, true);
+  try {
+    const attachments = [];
+    for (const f of files) {
+      attachments.push({
+        filename: f.name,
+        mediaType: f.type || "application/octet-stream",
+        sizeBytes: f.size,
+        contentBase64: await readFileAsBase64(f),
+      });
+    }
+    const s = await api("POST", `/api/v1/projects/${projectId}/goal`, {
+      userId: state.ctx.userId,
+      goalText: goalText || null,
+      attachments,
+    });
+    const parsed = (s.attachments || []).map((a) => `${a.filename}=${a.parseStatus}`).join(", ") || "없음";
+    $("#goalResult").textContent = `세션 #${s.sessionNumber} 생성 — 첨부 ${s.attachments.length}개: ${parsed}`;
+    $("#goalResult").className = "status ok";
+    $("#goalText").value = "";
+    $("#goalFiles").value = "";
+    renderGoalFileList();
+    toast("골을 접수했습니다.");
+    await loadPendingSessions();
+    await openSession(s.id);
+  } catch (e) {
+    $("#goalResult").textContent = `실패: ${e.message}`;
+    $("#goalResult").className = "status err";
+    toast(e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function loadSessions() {
+  if (!requireCtx()) return;
+  const projectId = $("#sessionProject").value;
+  if (!projectId) { toast("프로젝트를 선택하세요.", "err"); return; }
+  try {
+    state.sessions = await api("GET", `/api/v1/projects/${projectId}/clarification-sessions`);
+  } catch (e) { toast(e.message, "err"); return; }
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const list = $("#sessionList");
+  list.innerHTML = state.sessions.length
+    ? state.sessions.map((s) => `
+        <div class="item click" data-session="${esc(s.id)}">
+          <div class="title">세션 #${s.sessionNumber} ${statusBadge(s.status)}</div>
+          <div class="sub">${esc((s.goalText || "(첨부 중심 접수)").slice(0, 90))} · ${fmtDate(s.createdAt)}</div>
+        </div>`).join("")
+    : `<div class="item"><div class="sub">이 프로젝트의 세션이 없습니다.</div></div>`;
+}
+
+async function openSession(id) {
+  try {
+    state.currentSession = await api("GET", `/api/v1/clarification-sessions/${id}`);
+  } catch (e) { toast(e.message, "err"); return; }
+  renderSessionDetail();
+}
+
+function renderSessionDetail() {
+  const s = state.currentSession;
+  if (!s) { $("#sessionDetail").hidden = true; return; }
+  $("#sessionDetail").hidden = false;
+  $("#sessionDetailTitle").textContent = `${projectName(s.projectId)} — 세션 #${s.sessionNumber}`;
+  $("#sessionDetailBody").innerHTML = `
+    <div class="sub">상태 ${statusBadge(s.status)} · 생성 ${fmtDate(s.createdAt)} · 질문 상한 ${s.maxQuestions}</div>
+    ${s.goalText ? `<div class="sub">골: ${esc(s.goalText)}</div>` : `<div class="sub">첨부 중심 접수 (§28.7-1)</div>`}
+    ${(s.attachments || []).length
+      ? `<div class="chips">${s.attachments.map((a) => {
+          const mark = a.parseStatus === "PARSED" ? "✔ 파싱"
+            : a.parseStatus === "IMAGE_PENDING_VISION" ? "🖼 비전 대기"
+            : "⚠ 원본 보존";
+          return `<span class="chip">${esc(a.filename)} · ${mark}</span>`;
+        }).join("")}</div>`
+      : ""}
+  `;
+  const editable = s.status === "WAITING_CLIENT";
+  $("#btnCompose").hidden = !["OPEN", "REVIEW"].includes(s.status);
+  $("#btnSubmitAnswers").hidden = !editable;
+  $("#btnFreeze").hidden = s.status !== "REVIEW";
+  $("#reqBox").innerHTML = "";
+
+  if (["OPEN", "WAITING_CLIENT", "REVIEW"].includes(s.status)) {
+    $("#questionsBox").innerHTML = `<div class="item"><div class="sub">질문을 불러오는 중…</div></div>`;
+    api("GET", `/api/v1/clarification-sessions/${s.id}/questions`).then((qs) => {
+      state.questions = qs;
+      $("#questionsBox").innerHTML = qs.length
+        ? renderQuestions(qs, editable)
+        : `<div class="item"><div class="sub">등록된 질문이 없습니다. '질문 구성'을 누르세요.</div></div>`;
+    }).catch((e) => {
+      $("#questionsBox").innerHTML = e.status === 409
+        ? `<div class="status err">회사 검토 체인이 진행 중입니다. 잠시 후 '질문 구성' 또는 새로 열어보세요.</div>`
+        : `<div class="status err">질문 조회 실패: ${esc(e.message)}</div>`;
+    });
+  } else {
+    state.questions = [];
+    $("#questionsBox").innerHTML = "";
+    if (s.status === "FROZEN") showFrozenRequirements(s);
+  }
+  $("#sessionDetail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderQuestions(qs, editable) {
+  const typeName = {
+    SINGLE_CHOICE: "단일 선택", MULTI_CHOICE: "복수 선택",
+    SHORT_TEXT: "단답", FREE_TEXT: "자유 서술", NUMBER_RANGE: "수치",
+  };
+  return qs.map((q) => `
+    <div class="item" id="qform-${esc(q.id)}">
+      <div class="title">${esc(q.prompt)}</div>
+      <div class="sub">${esc(typeName[q.questionType] || q.questionType)} · ${q.displayOrder}번
+        ${q.answerStatus === "ANSWERED" ? '<span class="badge green">응답함</span>' : ""}
+        ${q.answerStatus === "SKIPPED" ? '<span class="badge amber">건너뜀</span>' : ""}
+      </div>
+      ${renderQuestionBody(q, editable)}
+      ${editable ? `<label class="check"><input class="q-skip" type="checkbox"> 건너뛰기 (미확정 — 목록 가정으로 기록)</label>` : ""}
+    </div>`).join("");
+}
+
+function renderOtherLine(kind, q, editable, checked, priorOther) {
+  const dis = editable ? "" : "disabled";
+  return `
+    <label class="check"><input type="${kind}" name="q_${esc(q.id)}" class="q-other-check" value="__other__" ${dis} ${checked ? "checked" : ""}> 기타 (직접 입력)</label>
+    <input class="q-other" placeholder="기타 내용" value="${esc(priorOther || "")}" ${dis}>`;
+}
+
+function renderQuestionBody(q, editable) {
+  const dis = editable ? "" : "disabled";
+  const priorSel = new Set(q.selectedValues || []);
+  const priorOther = q.otherText;
+  const otherChecked = priorOther != null && q.selectedValues == null;
+  if (q.questionType === "SINGLE_CHOICE") {
+    return (q.options || []).map((o) =>
+      `<label class="check"><input type="radio" name="q_${esc(q.id)}" value="${esc(o.value)}" ${dis} ${priorSel.has(o.value) ? "checked" : ""}> ${esc(o.label)}</label>`
+    ).join("") + (q.allowOther ? renderOtherLine("radio", q, editable, otherChecked, priorOther) : "");
+  }
+  if (q.questionType === "MULTI_CHOICE") {
+    return (q.options || []).map((o) =>
+      `<label class="check"><input type="checkbox" name="q_${esc(q.id)}" class="q-opt" value="${esc(o.value)}" ${dis} ${priorSel.has(o.value) ? "checked" : ""}> ${esc(o.label)}</label>`
+    ).join("") + (q.allowOther ? renderOtherLine("checkbox", q, editable, otherChecked, priorOther) : "");
+  }
+  if (q.questionType === "NUMBER_RANGE") {
+    return `<input type="number" class="q-number" value="${q.numericAnswer == null ? "" : esc(q.numericAnswer)}" ${dis} placeholder="숫자 입력">`;
+  }
+  const common = `class="q-text" ${dis} placeholder="답변"`;
+  return q.questionType === "SHORT_TEXT"
+    ? `<input ${common} value="${esc(priorOther || "")}">`
+    : `<textarea ${common} rows="2">${esc(priorOther)}</textarea>`;
+}
+
+function collectAnswers() {
+  return (state.questions || []).map((q) => {
+    const root = document.getElementById(`qform-${q.id}`);
+    if (!root) return null;
+    if (root.querySelector(".q-skip") && root.querySelector(".q-skip").checked) {
+      return { questionId: q.id, skipped: true };
+    }
+    const t = q.questionType;
+    const other = root.querySelector(".q-other");
+    const otherVal = other ? other.value.trim() : "";
+    if (t === "SINGLE_CHOICE") {
+      const sel = root.querySelector("input[type=radio]:checked");
+      if (sel && sel.value === "__other__") return { questionId: q.id, selectedValues: [], otherText: otherVal };
+      return { questionId: q.id, selectedValues: sel ? [sel.value] : [], otherText: null };
+    }
+    if (t === "MULTI_CHOICE") {
+      const vals = Array.from(root.querySelectorAll("input.q-opt:checked")).map((c) => c.value);
+      const otherChecked = root.querySelector(".q-other-check") && root.querySelector(".q-other-check").checked;
+      return { questionId: q.id, selectedValues: vals, otherText: otherChecked ? otherVal : null };
+    }
+    if (t === "NUMBER_RANGE") {
+      const v = root.querySelector(".q-number").value.trim();
+      return { questionId: q.id, numericAnswer: v === "" ? null : Number(v) };
+    }
+    return { questionId: q.id, selectedValues: null, otherText: otherVal || null };
+  }).filter(Boolean);
+}
+
+function firstUnansweredPrompt() {
+  for (const q of state.questions || []) {
+    const root = document.getElementById(`qform-${q.id}`);
+    if (!root || (root.querySelector(".q-skip") && root.querySelector(".q-skip").checked)) continue;
+    const t = q.questionType;
+    let ok = false;
+    if (t === "SINGLE_CHOICE") ok = !!root.querySelector("input[type=radio]:checked");
+    else if (t === "MULTI_CHOICE") {
+      ok = !!root.querySelector("input.q-opt:checked")
+        || (!!root.querySelector(".q-other-check:checked") && !!root.querySelector(".q-other").value.trim());
+    } else if (t === "NUMBER_RANGE") ok = root.querySelector(".q-number").value.trim() !== "";
+    else ok = root.querySelector(".q-text").value.trim() !== "";
+    if (!ok) return q;
+  }
+  return null;
+}
+
+async function submitAnswers() {
+  const s = state.currentSession;
+  if (!s || !state.questions.length) return;
+  const missing = firstUnansweredPrompt();
+  if (missing) { toast("모든 항목에 답하거나 건너뛰어 주세요: " + missing.prompt, "err"); return; }
+  try {
+    const updated = await api("POST", `/api/v1/clarification-sessions/${s.id}/answers`, {
+      userId: state.ctx.userId,
+      answers: collectAnswers(),
+    });
+    state.currentSession = updated;
+    toast("답변을 제출했습니다. 동결하면 요구사항이 확정됩니다.");
+    await refreshAll();
+    await openSession(updated.id);
+  } catch (e) {
+    toast(`답변 실패: ${e.message}`, "err");
+  }
+}
+
+async function composeQuestions() {
+  const s = state.currentSession;
+  if (!s) return;
+  try {
+    const qs = await api("POST", `/api/v1/clarification-sessions/${s.id}/questions`);
+    toast(`질문 ${qs.length}개 구성 — 체인 통과 후 응답 요청이 수신함에 표시됩니다.`);
+    await refreshAll();
+    await openSession(s.id);
+  } catch (e) {
+    toast(e.status === 409 ? e.message : `질문 구성 실패: ${e.message}`, "err");
+  }
+}
+
+async function freezeSession() {
+  const s = state.currentSession;
+  if (!s) return;
+  if (!confirm("요구사항을 동결할까요?\n동결 이후 수정은 새 버전으로만 가능합니다.")) return;
+  try {
+    const r = await api("POST", `/api/v1/clarification-sessions/${s.id}/freeze`, { userId: state.ctx.userId });
+    toast(`요구사항을 동결했습니다 (v${r.version}).`);
+    $("#reqBox").innerHTML = renderRequirementSet(r);
+    await refreshAll();
+    await openSession(s.id);
+  } catch (e) {
+    toast(`동결 실패: ${e.message}`, "err");
+  }
+}
+
+async function showFrozenRequirements(s) {
+  try {
+    const reqs = await api("GET", `/api/v1/projects/${s.projectId}/requirements`);
+    if (reqs.length) {
+      $("#reqBox").innerHTML = renderRequirementSet(reqs[reqs.length - 1]);
+    }
+  } catch { /* 조회 실패는 무시 */ }
+}
+
+function renderRequirementSet(r) {
+  const group = (title, items, dimAssumption) => {
+    const list = items || [];
+    return `
+      <h3>${esc(title)} (${list.length})</h3>
+      ${list.length
+        ? `<div class="list">${list.map((i) => `
+            <div class="item ${dimAssumption && i.source === "assumption" ? "dim" : ""}">
+              <div class="title">${esc(i.title)} ${dimAssumption && i.source === "assumption" ? '<span class="badge amber">가정</span>' : ""}</div>
+              <div class="sub">${esc(i.detail || "")}</div>
+              ${i.evidence ? `<div class="sub">근거: ${esc(i.evidence)}</div>` : ""}
+            </div>`).join("")}</div>`
+        : `<div class="item"><div class="sub">없음</div></div>`}`;
+  };
+  const frozen = r.status === "FROZEN";
+  return `
+    <h3>요구사항 세트 v${r.version} ${frozen ? '<span class="badge green">FROZEN</span>' : statusBadge(r.status)}</h3>
+    ${group("기능", r.content.functional, false)}
+    ${group("비기능", r.content.nonFunctional, false)}
+    ${group("제약", r.content.constraints, false)}
+    ${group("범위 밖", r.content.outOfScope, false)}
+    ${group("리스크·가정", r.content.openRisks, true)}`;
+}
+
 /* ==================== 셀렉트 갱신 ==================== */
 
 function fillSelect(sel, items, placeholder) {
@@ -789,6 +1142,8 @@ function renderSelects() {
   fillSelect("#msgProject", projItems, "프로젝트 없음");
   fillSelect("#msgSender", empItems, "직원 없음");
   fillSelect("#msgTarget", empItems, "직원 없음");
+  fillSelect("#goalProject", projItems, "프로젝트 없음");
+  fillSelect("#sessionProject", projItems, "프로젝트 없음");
   // 프로필 풀 내보내기용 (사용처: renderPool — state.profiles 직접 사용)
   void profItems;
 }
@@ -858,6 +1213,26 @@ function bindEvents() {
   $("#btnRatingSave").addEventListener("click", submitRating);
   $("#btnMsgSave").addEventListener("click", sendMessage);
   $("#btnAsk").addEventListener("click", ask);
+
+  // 고객 골 (§28)
+  $("#btnInboxRefresh").addEventListener("click", loadPendingSessions);
+  $("#btnGoalSubmit").addEventListener("click", submitGoal);
+  $("#goalFiles").addEventListener("change", renderGoalFileList);
+  $("#btnSessionLoad").addEventListener("click", loadSessions);
+  $("#btnSessionClose").addEventListener("click", () => {
+    $("#sessionDetail").hidden = true;
+    state.currentSession = null;
+    state.questions = [];
+  });
+  $("#btnCompose").addEventListener("click", composeQuestions);
+  $("#btnSubmitAnswers").addEventListener("click", submitAnswers);
+  $("#btnFreeze").addEventListener("click", freezeSession);
+  ["#pendingSessions", "#sessionList"].forEach((sel) => {
+    $(sel).addEventListener("click", (e) => {
+      const item = e.target.closest("[data-session]");
+      if (item) openSession(item.dataset.session);
+    });
+  });
 }
 
 /* ==================== 초기화 ==================== */
@@ -865,7 +1240,7 @@ function bindEvents() {
 window.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
   const hash = location.hash.replace("#", "");
-  showTab(["setup", "employees", "grades", "models", "work"].includes(hash) ? hash : "setup");
+  showTab(["setup", "employees", "grades", "models", "goal", "work"].includes(hash) ? hash : "setup");
   if (state.ctx) {
     $("#setupOrgId").value = state.ctx.organizationId || "";
     $("#setupUserId").value = state.ctx.userId || "";
@@ -874,5 +1249,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   resetGradeForm();
   renderProjects();
   renderTasks();
+  renderGoalFileList();
   if (state.ctx) await refreshAll();
+  else renderInbox();
 });

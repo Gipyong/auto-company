@@ -34,7 +34,9 @@ public class WebConsoleIntegrationTest {
     public void testIndexHtmlServedDirectly() throws Exception {
         mockMvc.perform(get("/index.html"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("id=\"tabbar\"")));
+                .andExpect(content().string(containsString("id=\"tabbar\"")))
+                .andExpect(content().string(containsString("data-tab=\"goal\"")))
+                .andExpect(content().string(containsString("id=\"goalFiles\"")));
     }
 
     @Test
@@ -42,7 +44,9 @@ public class WebConsoleIntegrationTest {
         mockMvc.perform(get("/app.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("/api/v1/organizations/template/import")))
-                .andExpect(content().string(containsString("/api/v1/employees")));
+                .andExpect(content().string(containsString("/api/v1/employees")))
+                .andExpect(content().string(containsString("/clarification-sessions")))
+                .andExpect(content().string(containsString("/pending-sessions")));
     }
 
     @Test
