@@ -10,6 +10,7 @@ export interface Team {
   description?: string | null;
   status: string;
   createdAt?: string;
+  teamLeadEmployeeId?: string | null;
 }
 
 export interface Employee {
@@ -219,5 +220,19 @@ export interface OrchestrationTriggerResponse {
   mode: string;
   createdTaskCount: number;
   blockedTaskCount: number;
+  createdAt: string;
+}
+
+export interface TeamFeedback {
+  id: string;
+  organizationId: string;
+  subjectTeamId: string | null;
+  authorEmployeeId: string;
+  authorTeamId: string | null;
+  category: string;
+  score: number | null;
+  summary: string;
+  evidenceRefs: string[];
+  contextWeight: number;
   createdAt: string;
 }

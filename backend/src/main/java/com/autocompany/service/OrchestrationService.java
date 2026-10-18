@@ -31,6 +31,7 @@ public class OrchestrationService {
     private final JobGradeRepository jobGradeRepository;
     private final OrchestratorCycleRepository cycleRepository;
     private final TaskService taskService;
+    private final TeamService teamService;
     private final ObjectMapper objectMapper;
 
     @Value("${orchestrator.replan_attempts_per_requirement_set:2}")
@@ -163,7 +164,7 @@ public class OrchestrationService {
         if (task.getType() == TaskType.EPIC || task.getType() == TaskType.STORY) {
             return false; // Epic/Story는 배정하지 않는다(§5.27)
         }
-        Optional<Employee> pick = pickAssignee(task.getType());
+        Optional<Employee> pick = pickAssignee(task, task.getType());
         Map<String, Object> log = new LinkedHashMap<>();
         log.put("taskId", task.getId().toString());
         log.put("type", task.getType().name());
@@ -187,7 +188,7 @@ public class OrchestrationService {
         return false;
     }
 
-    private Optional<Employee> pickAssignee(TaskType type) {
+    private Optional<Employee> pickAssignee(Task task, TaskType type) {
         List<UUID> gradeIds = jobGradeRepository.findByStatus(JobGrade.Status.ACTIVE).stream()
                 .filter(g -> g.getTaskTypes() != null && g.getTaskTypes().contains(type.name()))
                 .map(JobGrade::getId)
@@ -195,13 +196,39 @@ public class OrchestrationService {
         if (gradeIds.isEmpty()) {
             return Optional.empty();
         }
+
+        // 팀 인지 배정(§5.3 v1.9): 같은 팀 내 우선
+        UUID projectTeamId = inferProjectTeamId(task);
+
         return employeeRepository.findAll().stream()
                 .filter(e -> e.getGradeId() != null && gradeIds.contains(e.getGradeId()))
                 .filter(e -> e.getStatus() != Status.OFFLINE)
                 .sorted(Comparator
-                        .comparingLong((Employee e) -> openTaskCount(e.getId()))
+                        .comparingLong((Employee e) -> openTaskCount(e.getId()) + (projectTeamId != null && projectTeamId.equals(e.getTeamId()) ? -1000 : 0))
                         .thenComparing(Employee::getName, Comparator.nullsLast(String::compareTo)))
                 .findFirst();
+    }
+
+    /** 작업의 프로젝트 내 연관 팀 추정 — 같은 Epic/Story 하위 또는 최근 완료 Task의 담당 팀 */
+    private UUID inferProjectTeamId(Task task) {
+        // 1) 같은 Epic/Story 하위 Task들의 팀 중 가장 많은 팀
+        if (task.getParentTask() != null) {
+            List<Task> siblings = taskRepository.findByParentTaskId(task.getParentTask().getId());
+            return mostCommonTeam(siblings);
+        }
+        // 2) 프로젝트 내 최근 완료 Task들의 팀
+        List<Task> recent = taskRepository.findByProjectIdOrderByCreatedAtDesc(task.getProject().getId());
+        return mostCommonTeam(recent);
+    }
+
+    private UUID mostCommonTeam(List<Task> tasks) {
+        return tasks.stream()
+                .filter(t -> t.getAssignee() != null && t.getAssignee().getTeamId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(t -> t.getAssignee().getTeamId(), java.util.stream.Collectors.counting()))
+                .entrySet().stream()
+                .max(java.util.Map.Entry.comparingByValue())
+                .map(java.util.Map.Entry::getKey)
+                .orElse(null);
     }
 
     private long openTaskCount(UUID employeeId) {

@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { useToast } from "../toast";
 import { fmtNum } from "../lib";
 import { Badge, EmptyState, EvaluationReportView, StatusText } from "../components";
-import type { Employee, EvaluationReport } from "../types";
+import type { Employee, EvaluationReport, TeamFeedback } from "../types";
 
 const ROLES = [
   "PLANNER",
@@ -22,6 +22,7 @@ export default function EmployeesTab() {
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [evals, setEvals] = useState<EvaluationReport | null>(null);
+  const [teamFeedbacks, setTeamFeedbacks] = useState<TeamFeedback[]>([]);
   const [instrResult, setInstrResult] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [savingInstr, setSavingInstr] = useState(false);
@@ -35,6 +36,7 @@ export default function EmployeesTab() {
   const instrRef = useRef<HTMLTextAreaElement>(null);
   const gradeSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
+  const teamLeadSelectRef = useRef<HTMLSelectElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
   const hireNameRef = useRef<HTMLInputElement>(null);
@@ -181,6 +183,26 @@ export default function EmployeesTab() {
       );
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const assignTeamLead = async (teamId: string) => {
+    const leadId = teamLeadSelectRef.current?.value || null;
+    try {
+      await api("PATCH", `/api/v1/teams/${teamId}/lead`, { teamLeadEmployeeId: leadId });
+      toast.show(leadId ? `팀 리드를 지정했습니다 (${store.employeeName(leadId)}).` : "팀 리드를 해제했습니다.");
+      await store.refreshAll();
+    } catch (e) {
+      toast.show(`팀 리드 지정 실패: ${(e as Error).message}`, "err");
+    }
+  };
+
+  const loadTeamFeedbacks = async (teamId: string) => {
+    try {
+      const data = await api<TeamFeedback[]>("GET", `/api/v1/teams/${teamId}/feedback`);
+      setTeamFeedbacks(data);
+    } catch (e) {
+      toast.show(`팀 피드백 조회 실패: ${(e as Error).message}`, "err");
     }
   };
 
@@ -334,6 +356,32 @@ export default function EmployeesTab() {
                     <div className="sub">
                       소속 {store.employees.filter((e) => e.teamId === t.id).length}명
                     </div>
+                    {t.status !== "ARCHIVED" && (
+                      <div className="team-lead-row">
+                        <label htmlFor={`teamLead-${t.id}`}>팀 리드</label>
+                        <select
+                          id={`teamLead-${t.id}`}
+                          ref={teamLeadSelectRef}
+                          key={`lead-${t.id}-${t.teamLeadEmployeeId || "none"}`}
+                          defaultValue={t.teamLeadEmployeeId || ""}
+                          onChange={() => assignTeamLead(t.id)}
+                        >
+                          <option value="">(미지정 — 최고 직급 임시 대표)</option>
+                          {store.employees
+                            .filter((e) => e.teamId === t.id)
+                            .map((e) => (
+                              <option value={e.id} key={e.id}>
+                                {e.name} ({store.gradeLabel(e.gradeId)})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="team-feedback-row">
+                      <button className="btn ghost small" onClick={() => loadTeamFeedbacks(t.id)}>
+                        팀 피드백 조회
+                      </button>
+                    </div>
                     <div className="actions">
                       {renamingTeamId === t.id ? (
                         <>
@@ -382,6 +430,32 @@ export default function EmployeesTab() {
                 </div>
               )}
             </div>
+            {teamFeedbacks.length > 0 && (
+              <div className="panel" id="teamFeedbackPanel">
+                <h3>팀 피드백 (읽기 전용)</h3>
+                <p className="hint">팀 간 피드백은 팀장이 상대 팀에 제출하며 대상은 팀 전체입니다. 개인 평가로 분해하지 않습니다(§5.20.1).</p>
+                <div className="list">
+                  {teamFeedbacks.map((f) => (
+                    <div className="item" key={f.id}>
+                      <div className="title">
+                        <Badge kind="indigo">{f.category}</Badge>
+                        {f.score != null && <Badge kind="green">{Number(f.score).toFixed(1)}</Badge>}
+                        <span>작성: {store.employeeName(f.authorEmployeeId)} ({store.teamName(f.authorTeamId)})</span>
+                      </div>
+                      <div className="sub">{f.summary}</div>
+                      {f.evidenceRefs?.length ? (
+                        <div className="chips">
+                          {f.evidenceRefs.map((ref, i) => (
+                            <span className="chip" key={i}>{ref}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="sub">가중치: {Number(f.contextWeight ?? 1).toFixed(2)} · {new Date(f.createdAt).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
 

@@ -148,11 +148,11 @@ Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure
 `id, email(unique), display_name, password_hash?, auth_provider: local|oidc|none, role: owner|admin|operator|viewer, is_active, last_login_at?`. 로컬 MVP는 고정 단일 사용자(콘솔 부트스트랩 §5.1 — 생성 마법사 없음; 인증 도입 시 확장). 기본 비밀번호 소스/문서 금지. `role`은 시스템 권한이며, 운영자·고객 등 포지션(§0 원칙 11)은 이 role이 아니라 업무 문맥이다 — 콘솔에서는 사용자 한 명이 두 포지션을 오간다.
 
 ### 5.3 Team
-`id, organization_id, name, slug, description?, team_lead_employee_id?, purpose, status: active|archived`.
+`id, organization_id, name, description?, team_lead_employee_id?, status: active|archived, created_at, updated_at`.
 
-**구현 노트(TEAM-001)**: 구현 필드는 `id·organization_id·name·description?·status(ACTIVE|ARCHIVED)·timestamps`. API `GET/POST /teams?organizationId=`·`GET/PATCH /teams/{id}`(이름·설명·아카이브; `team_lead_employee_id`·`slug`·`purpose`는 후속). 직원 배치는 `employees.team_id`(V8, nullable FK) — 미배정=null. 팀 아카이브는 소속 직원이 있으면 409(직급 삭제와 동일 원칙) — 직원을 옮기거나 미배정으로 바꾼 뒤 가능; 이미 다른 팀으로 옮겨진 직원은 영향 없음(기록 보존). 팀은 단일 계층(부서/팀 플랫)이며 계층 구조는 후속. 조직은 하나(§5.1)이며 사용자가 팀을 자유롭게 나눈다 — 콘솔 직원 탭에서 팀 생성·이름변경·아카이브·필터·배치를 제공한다(WEB-003). **팀은 선택 사항이다** — 소규모 운영은 팀 없이(미배정) 가능하고, 규모·목적에 따라 프로젝트별 또는 역할별(개발팀/QA팀 등)로 구성하는 것은 사용자 자유다.
+**구현 노트(TEAM-001)**: 구현 필드는 `id·organization_id·name·description?·team_lead_employee_id?(직원 UUID, 팀장 역할 — 직급과 무관)·status(ACTIVE|ARCHIVED)·timestamps`. API `GET/POST /teams?organizationId=`·`GET/PATCH /teams/{id}`(이름·설명·아카이브·팀 리드 `team_lead_employee_id`). 직원 배치는 `employees.team_id`(V8, nullable FK) — 미배정=null. 팀 아카이브는 소속 직원이 있으면 409(직급 삭제와 동일 원칙) — 직원을 옮기거나 미배정으로 바꾼 뒤 가능. 팀은 단일 계층(플랫)이며 계층 구조는 후속. 조직은 하나(§5.1)이며 사용자가 팀을 자유롭게 나눈다 — 콘솔 직원 탭에서 팀 생성·이름변경·아카이브·팀 리드 지정·필터·배치를 제공한다(WEB-003). **팀은 선택 사항이다** — 소규모 운영은 팀 없이(미배정) 가능하고, 규모·목적에 따라 프로젝트별 또는 역할별(개발팀/QA팀 등)로 구성하는 것은 사용자 자유다.
 
-**팀 운영 모델(v1.9 방향 — 후속 구현)**: ① 팀을 만들지 않으면 전원이 하나의 **기본 팀**으로 동작한다(가상 — `team_id` null 묶음, 별도 행 없이 "전체" 의미). ② 피드백: 팀 내=직원 상호 간(§15 기존 경로), 팀 간=**팀 단위 피드백** — 각 팀의 팀장이 상대 팀에 제출하고 대상은 개인이 아니라 **팀 전체**다(팀 컨텍스트로 주입, 개인 평가로 분해하지 않음). ③ 회의: 같은 구조 — 팀 내 회의(팀원), 팀 간 논의·충돌은 팀장 회의(§13). ④ 팀의 실질 이점: 배정 시 팀 내 우선(컨텍스트 재사용·교차 조정 비용 절감, §29.3), 팀 단위 피드백·진행 요약이 팀 컨텍스트를 강화, (후속) 모듈 소유권·리뷰 라우팅. ⑤ 팀장은 **역할**이며 직급이 아니다(`team_lead_employee_id`; 직급 자동 변경 금지 원칙과 무관) — 미지정 팀은 최고 직급(동률 이름순)이 임시 대표로 참여하고 기록에 남긴다. 팀 겸임(복수 팀 소속)은 MVP에서 금지(단일 소속 유지).
+**팀 운영 모델(v1.9 구현)**: ① 팀을 만들지 않으면 전원이 하나의 **기본 팀**으로 동작한다(가상 — `team_id` null 묶음, 별도 행 없이 "전체" 의미). ② 피드백: 팀 내=직원 상호 간(§15 기존 경로), 팀 간=**팀 단위 피드백** — 각 팀의 팀장이 상대 팀에 제출하고 대상은 개인이 아니라 **팀 전체**다(팀 컨텍스트로 주입, 개인 평가로 분해하지 않음). ③ 회의: 같은 구조 — 팀 내 회의(팀원), 팀 간 논의·충돌은 팀장 회의(§13). ④ 팀의 실질 이점: 배정 시 팀 내 우선(컨텍스트 재사용·교차 조정 비용 절감, §29.3), 팀 단위 피드백·진행 요약이 팀 컨텍스트를 강화. ⑤ 팀장은 **역할**이며 직급이 아니다(`team_lead_employee_id`; 직급 자동 변경 금지 원칙과 무관) — 미지정 팀은 최고 직급(동률 이름순)이 임시 대표로 참여하고 기록에 남긴다. 팀 겸임(복수 팀 소속)은 MVP에서 금지(단일 소속 유지). ⑥ 팀 리드 지정/해제 API: `PATCH /teams/{id}`에 `teamLeadEmployeeId`(UUID|null) — 팀원 여부 검증, 본인 팀 소속만 가능.
 
 ### 5.4 Employee
 `id, organization_id, team_id?, employee_code(unique), display_name, job_family, specialties, grade_id(JobGrade 참조), employment_status: active|paused|on_leave|retired, availability_status: available|working|waiting|rate_limited|blocked, system_profile(직무 원칙, 민감정보 금지), custom_instructions(text?, 사용자가 작성한 개별 지시 — 직원 구성·수정 시 부여; AGENTS.md류 자유 서식), tool_policy_id, memory_policy, manager_employee_id?, created_by_user_id, retired_at?`.
@@ -236,6 +236,15 @@ DocumentRevision: `document_id, revision_number, content_hash, artifact_id, chan
 ### 5.20 Evaluation
 `id, organization_id, subject_employee_id, evaluator_employee_id?, evaluator_type: peer|manager|automated_metric|human, project_id?, period_start/period_end, rubric_version, scores_json, evidence_refs, confidence, conflict_of_interest, summary, created_at`. 성과 관측자료; 직급 자동 변경 금지(§15). 평가자 다양성과 산출물 검증 결과를 함께 고려(자기 평가·담합·계열 편향 완화).
 - **입력 표면(WEB-004)**: 평가는 사용자가 아니라 **직원들끼리** 한다(자율 또는 회의 프로토콜 §13). 콘솔에는 평가 제출 UI가 없고 평가 리포트 조회만 제공한다(`GET /employees/{id}/evaluations`). `POST /ratings` API는 직원·시스템 경로로 보존하며, 피드백 컨텍스트 관리(RatingEngine — 최신성 가중·요약·아카이브, §15)가 유지된다. 사용자의 직원 개입 수단은 커스텀 지시(§5.4)다.
+
+### 5.20.1 TeamFeedback(팀 단위 피드백, v1.9)
+`id, organization_id, subject_team_id?(null=기본 팀), author_employee_id(팀장), author_team_id?(null=기본 팀), category(CODE_QUALITY|LOGIC|COOPERATION|DOC_COMPLETENESS|PROCESS|OTHER), score(0~5, optional), summary(text), evidence_refs(JSONB: 문자열 배열), context_weight(0~1, 기본 1.0 — 팀 컨텍스트 참고 가중), created_at`.
+
+- **작성 권한**: `author_employee_id`가 해당 팀의 `team_lead_employee_id`(또는 임시 대표)인 직원만 가능. 자기 팀 지목 금지(`subject_team_id != author_team_id`).
+- **대상**: 팀 전체(개인 직원·팀장 개인이 아님). 팀장 개인에 대한 피드백은 개인 간 경로(§15)로 분리.
+- **용도**: 팀 컨텍스트(구성원 AgentRun 참고 계층·팀 요약 리포트)로만 사용, 개인 평가·직급과 분리(승진·강등 금지 원칙 유지).
+- **API**: `POST /api/v1/teams/{subjectTeamId}/feedback`(팀장만 작성), `GET /api/v1/teams/{teamId}/feedback`(조회 — 팀원·팀장 모두 접근), `GET /api/v1/teams/{teamId}/feedback/summary`(팀 컨텍스트 주입용 집계).
+- **DB**: V10 마이그레이션으로 `team_feedbacks` 테이블 생성(FK: organization_id, subject_team_id nullable, author_employee_id, author_team_id nullable).
 
 ### 5.21 BudgetPolicy / UsageReservation / UsageLedger
 BudgetPolicy: `scope_type: organization|project|employee|task|model_profile, scope_id, period: rolling_5h|hourly|daily|weekly|calendar_month|project_lifetime, resource_metric: cost|input_tokens|output_tokens|total_tokens|request_count|execution_seconds, max_amount?/max_quantity?, currency, warning_threshold_percent(기본 80), hard_limit(기본 true), on_limit: pause|fallback_local|require_approval|fail, fallback_policy_id?, reset_timezone?, starts_at/ends_at?, enabled, created_by_user_id, allow_unpriced_models(기본 false), metadata`. 복수 정책 동시 적용 가능(예: 직원 월 비용+rolling 5h 토큰+일일 요청+모델별 월한도).
@@ -428,7 +437,9 @@ root 아님 / read-only rootfs(가능 시) / 불필요 capabilities 제거 / **D
 
 **참석자**: 전문성·영향·위험도 기준 선정; 동일 모델 계열 겹침은 독립성 과대평가 금지.
 
-**팀 스코프(v1.9 방향 — 후속 구현)**: 회의 범위=`team|inter_team` — 팀 내 회의는 팀원이 참여하고, 팀 간 논의·충돌은 **팀장 회의**로 한다(팀장 미지정 시 임시 대표 §5.3). 미해결 쟁점은 조직 중재(PLANNER·ARCHITECT 참여)로 에스컬레이션하고 결정·반대 의견을 Decision으로 보존한다. 팀 간 결정·합의는 팀 단위로 귀속한다(개인 귀속 금지).
+**팀 스코프(v1.9 구현)**: 회의 범위=`team|inter_team` — 팀 내 회의는 팀원이 참여하고, 팀 간 논의·충돌은 **팀장 회의**로 한다(팀장 미지정 시 임시 대표 §5.3). 미해결 쟁점은 조직 중재(PLANNER·ARCHITECT 참여)로 에스컬레이션하고 결정·반대 의견을 Decision으로 보존한다. 팀 간 결정·합의는 팀 단위로 귀속한다(개인 귀속 금지).
+
+**Meeting 엔티티 확장(v10)**: `scope: team|inter_team`(필수), `team_ids`(JSONB: 대상 팀 UUID 배열, scope=inter_team 시 2개 이상), `escalation_level: 0|1|2`(0=팀 내, 1=팀장 회의, 2=조직 중재), `decision_team_ids`(JSONB: 결정이 귀속하는 팀들). API: `POST /api/v1/meetings`(scope+team_ids 필수), `GET /api/v1/meetings?teamId=`(팀 내 회의 조회), `POST /api/v1/meetings/{id}/escalate`(레벨 업 + 조직 중재자 추가).
 
 **결정 우선순위**: 안전·법률·보안 > 고객 명시적 요구 > 자동 품질 게이트 > 아키텍처 결정 > 팀 기술 판단 > 개인 선호. 합의 없으면 반대 의견을 Decision에 보존.
 
@@ -838,7 +849,9 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 ### 29.3 배정 정책
 TaskType→직급 `task_types` 매칭 우선; 배정 실패 시 `BLOCKED`+사용자 조치 사유 기록. 배정 이력은 WorkflowRun 기록되므로, 이후 조직 변경(직급 재편·인원 변동) 시 영향 분석 가능.
 
-**구현(Mock, ORCH-002)**: 등록 `active` 직급 중 `task_types`가 TaskType을 포함하는 직급을 찾고, 그 직급의 직원(상태 OFFLINE 제외) 중 미완료 업무(ASSIGNED/IN_PROGRESS/REVIEW) 수가 최소인 직원(동률은 이름 순)을 배정한다. 매칭 실패는 `BLOCKED`+`blocked_reason="배정 가능한 직원 없음 — {type} 역량 직급/직원 필요"`. EPIC/STORY는 배정하지 않는다(READY). 팀 인지 배정(팀 특성 반영)은 후속 — 팀은 선택 사항이다(§5.3). **팀 이점(v1.9 방향)**: 배정 시 같은 팀 내 우선을 기본 가중으로 두어 컨텍스트 재사용·교차 조정 비용을 줄이고, 팀 단위 피드백·진행 요약이 팀 컨텍스트를 강화한다.
+**구현(Mock, ORCH-002)**: 등록 `active` 직급 중 `task_types`가 TaskType을 포함하는 직급을 찾고, 그 직급의 직원(상태 OFFLINE 제외) 중 미완료 업무(ASSIGNED/IN_PROGRESS/REVIEW) 수가 최소인 직원(동률은 이름 순)을 배정한다. 매칭 실패는 `BLOCKED`+`blocked_reason="배정 가능한 직원 없음 — {type} 역량 직급/직원 필요"`. EPIC/STORY는 배정하지 않는다(READY).
+
+**팀 인지 배정(v1.9 구현)**: 직원이 속한 팀(`team_id`)이 있고, 해당 Task의 연관 업무(동일 Epic/Story 하위 또는 동일 프로젝트 내 최근 완료 Task)의 담당 팀과 일치하면 해당 팀 내 직원을 **최우선 후보**로 승격(가중치 -1000, 미완료 수 계산 전 적용). 팀 미배정(null=기본 팀) 직원은 팀 매칭 없이 전역 후보 풀에 포함. 팀 리드 미지정 팀은 최고 직급(동률 이름순) 직원을 임시 대표로 간주해 팀 간 회의·피드백에 참여시키고 기록에 명시. 팀 겸임 금지(단일 `team_id` 유지).
 
 ### 29.4 상태 요약
 사이클은 지속 보고: 고객 응답 대기(`waiting_client`) / 실행 중 Task **제품 관점 요약**(코드 상세 아님) / 블로커·새 요구 필요. 조회는 `GET /projects/{id}/orchestration` — 응답 `{cycle, tasks, latestFrozen}`(§17)로 사이클 요약과 업무·배정 현황을 함께 제공한다.
