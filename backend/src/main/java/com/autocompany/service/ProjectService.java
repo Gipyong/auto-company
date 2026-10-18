@@ -45,9 +45,10 @@ public class ProjectService {
         return projectRepository.findById(projectId);
     }
 
+    /** §17 WEB-003 — 콘솔 프로젝트 목록(최신순) */
     @Transactional(readOnly = true)
     public List<Project> getProjectsByUser(UUID userId) {
-        return projectRepository.findByUserId(userId);
+        return projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     @Transactional

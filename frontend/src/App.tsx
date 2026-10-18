@@ -1,31 +1,37 @@
 import { useEffect, useState } from "react";
 import { StoreProvider, useStore } from "./store";
 import { ToastProvider } from "./toast";
-import SetupTab from "./tabs/SetupTab";
+import InstructionsTab from "./tabs/InstructionsTab";
 import EmployeesTab from "./tabs/EmployeesTab";
 import GradesTab from "./tabs/GradesTab";
 import ModelsTab from "./tabs/ModelsTab";
-import GoalTab from "./tabs/GoalTab";
-import WorkTab from "./tabs/WorkTab";
 import "./styles.css";
 
+// §17 WEB-003 — 좌측 사이드바 IA: 지시 / 직원 / 직급 / 모델
 const TABS = [
-  { key: "setup", label: "시작" },
-  { key: "employees", label: "직원" },
-  { key: "grades", label: "직급" },
-  { key: "models", label: "모델" },
-  { key: "goal", label: "고객 골" },
-  { key: "work", label: "업무" },
+  { key: "instructions", label: "지시", icon: "💬" },
+  { key: "employees", label: "직원", icon: "👥" },
+  { key: "grades", label: "직급", icon: "🏅" },
+  { key: "models", label: "모델", icon: "🧠" },
 ];
 
+// v1.7 이전 해시(#setup·#goal·#work)는 지시 탭으로 정규화
+const HASH_ALIASES: Record<string, string> = {
+  setup: "instructions",
+  goal: "instructions",
+  work: "instructions",
+};
+
 function tabFromHash(): string {
-  const hash = location.hash.replace("#", "");
-  return TABS.some((t) => t.key === hash) ? hash : "setup";
+  const raw = location.hash.replace("#", "");
+  const hash = HASH_ALIASES[raw] || raw;
+  return TABS.some((t) => t.key === hash) ? hash : "instructions";
 }
 
 function Shell() {
   const store = useStore();
   const [tab, setTab] = useState<string>(tabFromHash);
+  const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -33,14 +39,9 @@ function Shell() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  useEffect(() => {
-    if (store.ctx) {
-      store.refreshAll();
-    }
-  }, []);
-
   const navigate = (name: string) => {
     setTab(name);
+    setDrawer(false);
     if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
     window.scrollTo(0, 0);
   };
@@ -48,59 +49,68 @@ function Shell() {
   const waiting = store.pendingSessions.filter((s) => s.status === "WAITING_CLIENT").length;
 
   return (
-    <>
-      <header className="topbar">
+    <div className="app">
+      <header className="mobilebar">
+        <button
+          className="hamburger"
+          aria-label="메뉴"
+          onClick={() => setDrawer((v) => !v)}
+        >
+          ☰
+        </button>
         <div className="brand">
-          🤖 <strong>AutoCompany</strong> <span className="brand-sub">CEO 콘솔</span>
-        </div>
-        <div className={`ctx-chip${store.ctx ? " on" : ""}`}>
-          {store.ctx ? `조직 ${String(store.ctx.organizationId).slice(0, 8)}…` : "설정 필요"}
+          🤖 <strong>AutoCompany</strong>
         </div>
       </header>
 
-      <nav className="tabbar" id="tabbar">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`tab${tab === t.key ? " active" : ""}`}
-            data-tab={t.key}
-            onClick={() => navigate(t.key)}
-          >
-            {t.label === "고객 골" ? (
-              <>
-                고객 골{" "}
-                <span id="goalTabBadge" className="tab-badge" hidden={waiting === 0}>
+      <aside className={`sidenav${drawer ? " open" : ""}`} id="sidenav">
+        <div className="sidenav-brand">
+          🤖 <strong>AutoCompany</strong>
+        </div>
+        <nav>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={`nav-item${tab === t.key ? " active" : ""}`}
+              data-tab={t.key}
+              onClick={() => navigate(t.key)}
+            >
+              <span className="nav-icon" aria-hidden>
+                {t.icon}
+              </span>
+              <span>{t.label}</span>
+              {t.key === "instructions" && waiting > 0 ? (
+                <span id="navGoalBadge" className="nav-badge">
                   {waiting}
                 </span>
-              </>
-            ) : (
-              t.label
-            )}
-          </button>
-        ))}
-      </nav>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+        <div className="sidenav-foot" id="connStatus">
+          {store.conn ? store.conn.text : "연결 중…"}
+        </div>
+      </aside>
+      {drawer ? <div className="scrim" onClick={() => setDrawer(false)} /> : null}
 
       <main>
-        <section className={`tabpage${tab === "setup" ? " active" : ""}`} id="tab-setup">
-          <SetupTab goSetup={() => navigate("setup")} />
+        <section
+          className={`tabpage${tab === "instructions" ? " active" : ""}`}
+          id="tab-instructions"
+        >
+          <InstructionsTab />
         </section>
         <section className={`tabpage${tab === "employees" ? " active" : ""}`} id="tab-employees">
-          <EmployeesTab goSetup={() => navigate("setup")} />
+          <EmployeesTab />
         </section>
         <section className={`tabpage${tab === "grades" ? " active" : ""}`} id="tab-grades">
-          <GradesTab goSetup={() => navigate("setup")} />
+          <GradesTab />
         </section>
         <section className={`tabpage${tab === "models" ? " active" : ""}`} id="tab-models">
-          <ModelsTab goSetup={() => navigate("setup")} />
-        </section>
-        <section className={`tabpage${tab === "goal" ? " active" : ""}`} id="tab-goal">
-          <GoalTab goSetup={() => navigate("setup")} goWork={() => navigate("work")} />
-        </section>
-        <section className={`tabpage${tab === "work" ? " active" : ""}`} id="tab-work">
-          <WorkTab goSetup={() => navigate("setup")} />
+          <ModelsTab />
         </section>
       </main>
-    </>
+    </div>
   );
 }
 

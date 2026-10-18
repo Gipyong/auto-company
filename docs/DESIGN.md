@@ -1,11 +1,12 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.7 (웹 콘솔 SPA 분리 — React+TS+Vite `frontend/`+nginx `front` 컨테이너, 백엔드 JSON API 전용; v1.6.1 기반)  
+> 버전: 1.8 (단일 조직 콘솔 IA 재편 — 좌측 사이드바(지시·직원·직급·모델), 자동 부트스트랩(시작 탭 제거), 지시 탭 통합(프롬프트 창구+프로젝트), 팀(부서) 도메인, 목록 우선 UX; TEAM-001·WEB-003)  
 > 상태: 구현 기준 설계 — Java 21 / Spring Boot 3.x(안정 버전) + Maven 백엔드 기준  
 > 목표: 로컬 우선으로 실행 가능하고, 다른 PC·서버로 재현/배포 가능한 AI 기반 소프트웨어 개발 조직 플랫폼  
-> 위치 핵심: 사용자는 고정 포지션이 아니다 — **운영자**(조직 구성·통제), **발주 고객**(요구 제출·확정), **기술 조언자·전문가**(디자이너·TO 등 직접 지시), **외부 고객 중계자**를 오간다. 시스템은 사용자를 전문가·비전문가로 단정하지 않고 전문성 신호에 따라 조응한다(§0, §28). 요구사항 이외의 기술 결정은 기본적으로 AI 직원 내부 협의가 처리한다(§28, §29).
+> 위치 핵심: 사용자는 하나의 주체다 — **운영자**로서 팀·직원·직급을 구성하고, **고객**으로서 지시 창구에서 요구사항을 전달한다. 콘솔은 "CEO"·"외부 고객" 같은 포지션 라벨을 표시하지 않는다. 외부 고객 중계(§5.26)는 구현·테스트를 보존하고 콘솔에서는 휴면. 시스템은 사용자를 전문가·비전문가로 단정하지 않고 전문성 신호에 따라 조응한다(§0, §28). 요구사항 이외의 기술 결정은 기본적으로 AI 직원 내부 협의가 처리한다(§28, §29).
 
 변경 이력:
+- v1.8: 콘솔 정보구조 재편(WEB-003) — 단일 조직 자동 구성(시작 탭 제거), 좌측 사이드바 탭(지시·직원·직급·모델), 지시 탭 통합(프롬프트 창구 [묻기]/[지시하기]+프로젝트 목록·상세), 목록 우선 UX(빈 상태 중앙 CTA), 'CEO'·'외부 고객' 표기 제거·'골'은 내부 도메인 용어로 유지(콘솔 표기는 프로젝트/지시), 메시지·CEO Ask UI 제거. 팀(부서) 도메인(TEAM-001 — §5.3, 직원 팀 배치). 외부 고객 중계 UI 휴면(§5.26 구현 보존).
 - v1.7: 웹 콘솔을 SPA(React+TypeScript+Vite, `frontend/`)로 분리; nginx `front` 컨테이너가 정적 서빙+`/api` 프록시(콘솔 `http://localhost:3000`); 백엔드는 JSON API 전용(정적 콘솔 제거, WEB-002). Dockerfile을 서비스 디렉터리별 배치(`backend/Dockerfile`·`frontend/Dockerfile`), 루트는 `docker-compose.yml`만.
 - v1.6.1: 전체 재검토 정정 — 세션 취소 규칙(고객 포지션, 파이프라인 개설 포함), 파이프라인 자동 세션 상한 범위 명시, 수신함 엔드포인트 `GET /users/{userId}/pending-sessions` 정리, 세션 `client_id`=Project 상속 규칙, User.role↔포지션 구분, 포인터·공백·문법 정정.
 - v1.6: 사용자 다중 포지션(운영자·발주 고객·기술 조언자·전문가·중계자), 외부 고객(Client) 중계, **사용자 개설 요구사항 세션**(§28.6), 골 다중 모달 접수(파일·이미지 첨부 §28.7), 직원 커스텀 지시(custom_instructions) 설계. 형식 오류 정정.
@@ -27,7 +28,7 @@
 8. **Human-readable artifacts**: 주요 결정은 ADR·이슈·PR·테스트·문서 버전과 연결.
 9. **Reproducibility**: 설정·프롬프트·도구 버전·모델 식별자·커밋·테스트 환경 기록.
 10. **Safe defaults**: 설치 직후 작동하는 기본 템플릿 제공. 위험 권한·자동 배포는 기본 비활성.
-11. **User is multi-position**: 사용자는 운영자(직원·직급·모델 풀·직원 지시 등 조직 전 권한), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 기술·디자인 지시), 외부 고객 중계자(유치 고객의 요구·의견을 그대로 전달)를 오간다. 시스템은 어느 포지션에서든 사용자의 전문성을 고정 단정하지 않는다 — 신호 기반 적응(§28.2): 전문 요구는 `client_declared` 제약으로 수용, 신호 없으면 기술 사항은 묻지 않고 내부 결정.
+11. **User is one person, two positions**: 사용자는 하나의 주체다 — 운영자 포지션(팀·직원·직급·모델 풀·직원 지시 등 조직 구성 전 권한)과 고객 포지션(지시 창구에서 요구 전달·명확화 답변·인수)을 오간다. 콘솔은 포지션 라벨("CEO"·"외부 고객")을 표시하지 않는다. 외부 고객 중계(§5.26)는 구현·테스트를 보존하고 콘솔에서는 휴면한다. 시스템은 전문성을 고정 단정하지 않는다 — 신호 기반 적응(§28.2): 전문 요구는 `client_declared` 제약으로 수용, 신호 없으면 기술 사항은 묻지 않고 내부 결정.
 12. **Requirements are frozen records**: 동결된 요구사항 기록은 불변. 진화는 새 세션·새 버전으로만(§28.6). 이후 작업 분해는 동결 기록을 근거로 참조한다.
 
 주요 용어:
@@ -39,7 +40,7 @@
 
 ## 1. 제품 범위
 
-**MVP 포함**: 로컬 웹 콘솔 / 조직·직원·직급·모델 관리(운영자 포지션) / **고객 골(Goal) 접수 — 텍스트+파일·이미지 첨부(§28.7)** / **요구사항 명확화 파이프라인(협의→구조화 질문→응답→동결, §28)** / **자율 오케스트레이션(분해·자동 배정, §29)** / Git 저장소 연결 / 모델 호출·도구 실행(초기 Mock 모델) / 격리 Docker workspace / 브랜치·PR·리뷰·테스트 게이트 / 문서 관리와 질의응답 / 비용·실행 로그 / 재시도·대기·복구 / 감사 로그.
+**MVP 포함**: 로컬 웹 콘솔(단일 조직·단일 사용자) / 팀(부서)·직원·직급·모델 관리(운영자 포지션) / **프로젝트 지시 접수 — 프롬프트+파일·이미지 첨부(§28.7; 도메인 용어 골=지시 원문)** / **요구사항 명확화 파이프라인(협의→구조화 질문→응답→동결, §28)** / **자율 오케스트레이션(분해·자동 배정, §29)** / Git 저장소 연결 / 모델 호출·도구 실행(초기 Mock 모델) / 격리 Docker workspace / 브랜치·PR·리뷰·테스트 게이트 / 문서 관리와 질의응답 / 비용·실행 로그 / 재시도·대기·복구 / 감사 로그.
 
 **MVP 이후**: 직무별 동료 평가 관측 / 정교한 회의 프로토콜 / 다중 프로젝트 스케줄링 / VM 실행기 / webhook 동기화 / 운영 모니터링 / 분산 worker / 성과 기반 모델·조직 최적화.
 
@@ -51,7 +52,7 @@
 
 Docker Compose 기반 로컬 설치. 구성 대상: `front` SPA 콘솔(nginx, 호스트 3000→80; `/api`를 `web`으로 프록시), `web` API(+초기 worker 동일 프로세스), `postgres`, (안정화 후) `worker` 분리, (선택) `redis`, `workspace-runner`, 로컬 모델 서버. 코드 실행 권한을 가진 workspace runner는 API와 동일 권한/컨테이너에 넣지 않는다. Dockerfile은 서비스 디렉터리에 둔다(`backend/Dockerfile`, `frontend/Dockerfile`) — 루트는 `docker-compose.yml`+`.env.example`만.
 
-설치 흐름: clone → `.env` 생성 → `docker compose up -d` → 콘솔 접속(`http://localhost:3000`; API 직접은 `:8080`) → 최초 관리자 생성 → 모델 제공자 설정/로컬 모델 선택 → Git 저장소 등록 → 기본 회사 템플릿 선택 → preflight 사전 점검 → 첫 골 제출.
+설치 흐름: clone → `.env` 생성 → `docker compose up -d` → 콘솔 접속(`http://localhost:3000`; API 직접은 `:8080`) → **첫 접속 시 고정 단일 조직+기본 템플릿(직급 5·직원 8) 자동 구성(시작 탭 없음; §6.2)** → 팀·직원 구성(자유) → 모델 제공자 설정/로컬 모델 선택 → Git 저장소 등록 → preflight 사전 점검 → 지시 창구에서 첫 요구 제출.
 
 - API 키는 UI에 평문 재표시 금지. `.env`/비밀 파일은 커밋 금지.
 
@@ -63,9 +64,9 @@ Docker Compose 기반 로컬 설치. 구성 대상: `front` SPA 콘솔(nginx, �
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│               Console (운영자·고객 포지션, §0 원칙 11)              │
-│ 골(Goal) 입력(텍스트+첨부) · 명확화 세션(질문/응답·개설·진화)   │
-│ Dashboard · Org · Employees · Projects · Costs · Audit       │
+│               Console (단일 사용자 — 팀·직원 구성+요구 제출, §0 원칙 11)            │
+│ 지시 창구(프롬프트 [묻기]/[지시하기]) · 명확화 세션(질문/응답·개설·진화)   │
+│ Dashboard · Org(Teams) · Employees · Projects · Costs · Audit       │
 └──────────────────────────────┬──────────────────────────────┘
                                │ REST / SSE
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -108,13 +109,13 @@ Docker Compose 기반 로컬 설치. 구성 대상: `front` SPA 콘솔(nginx, �
 ```
 
 논리 모듈(§3) — 모놀리식 한 코드베이스에서 패키지 경계로 구현, 마이크로서비스 분리는 초기에 하지 않는다:
-1. Organization(직원·직급·모델 풀·권한·수임 고객) 2. Project(설정·저장소·환경) 3. **Goal & Clarification(§28; 다중 모달 접수·사용자 개설 세션 포함)** 4. **Orchestration(§29)** 5. Task(의존성·완료 조건) 6. Workflow Engine(전이·재시도·타임아웃) 7. Agent Runtime 8. Model Router 9. Tool Broker 10. Workspace Manager 11. Git Integration 12. Quality Gate 13. Knowledge & Docs 14. Evaluation 15. Budget & Usage 16. Audit & Observability
+1. Organization(팀·직원·직급·모델 풀·권한) 2. Project(설정·저장소·환경) 3. **Goal & Clarification(§28; 다중 모달 접수·사용자 개설 세션 포함)** 4. **Orchestration(§29)** 5. Task(의존성·완료 조건) 6. Workflow Engine(전이·재시도·타임아웃) 7. Agent Runtime 8. Model Router 9. Tool Broker 10. Workspace Manager 11. Git Integration 12. Quality Gate 13. Knowledge & Docs 14. Evaluation 15. Budget & Usage 16. Audit & Observability
 
 ---
 
 ## 4. 기술 스택
 
-- Frontend: 초기 정적 콘솔(§17) → 장기 Next.js+TypeScript(UI-001)
+- Frontend: React+TypeScript+Vite SPA 콘솔(`frontend/`, WEB-002·WEB-003 — 좌측 사이드바 IA). 장기 고객 대시보드(Next.js, UI-001)는 별도 분리 대상
 - 백엔드: Java 21 LTS + Spring Boot 3.x(지원 안정 버전, 버전 고정) / **빌드: Maven**(저장소 기준, `backend/pom.xml`)
 - API 계약: Spring MVC 기본, 필요 시 WebFlux / Bean Validation / OpenAPI+계약 테스트
 - 보안: Spring Security·명시적 RBAC·CSRF/CORS·비밀 외부화
@@ -140,16 +141,20 @@ Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure
 ### 5.1 Organization
 `id, name, slug(unique), description?, settings_json(조직 기본 정책), status: active|archived`.
 
+**구현 노트(MVP 콘솔)**: 조직은 하나·불변이다 — 콘솔은 고정 조직 ID(상수)로 동작하고 조직 생성·전환 UI가 없다(WEB-003, 시작 탭 제거). API는 `organizationId` 파라미터를 유지한다(스코프 호환). 첫 접속 시 기본 템플릿을 자동 import한다(§6.2; 이미 구성돼 있으면 409 무시).
+
 ### 5.2 User
-`id, email(unique), display_name, password_hash?, auth_provider: local|oidc|none, role: owner|admin|operator|viewer, is_active, last_login_at?`. 최초 사용자 생성 마법사 제공. 기본 비밀번호 소스/문서 금지. `role`은 시스템 권한이며, 운영자·발주 고객 등 포지션(§0 원칙 11)은 이 role이 아니라 업무 문맥이다 — 같은 사용자가 프로젝트마다 다른 포지션을 가질 수 있다.
+`id, email(unique), display_name, password_hash?, auth_provider: local|oidc|none, role: owner|admin|operator|viewer, is_active, last_login_at?`. 로컬 MVP는 고정 단일 사용자(콘솔 부트스트랩 §5.1 — 생성 마법사 없음; 인증 도입 시 확장). 기본 비밀번호 소스/문서 금지. `role`은 시스템 권한이며, 운영자·고객 등 포지션(§0 원칙 11)은 이 role이 아니라 업무 문맥이다 — 콘솔에서는 사용자 한 명이 두 포지션을 오간다.
 
 ### 5.3 Team
 `id, organization_id, name, slug, description?, team_lead_employee_id?, purpose, status: active|archived`.
 
+**구현 노트(TEAM-001)**: 구현 필드는 `id·organization_id·name·description?·status(ACTIVE|ARCHIVED)·timestamps`. API `GET/POST /teams?organizationId=`·`GET/PATCH /teams/{id}`(이름·설명·아카이브; `team_lead_employee_id`·`slug`·`purpose`는 후속). 직원 배치는 `employees.team_id`(V8, nullable FK) — 미배정=null. 팀 아카이브는 소속 직원이 있으면 409(직급 삭제와 동일 원칙) — 직원을 옮기거나 미배정으로 바꾼 뒤 가능; 이미 다른 팀으로 옮겨진 직원은 영향 없음(기록 보존). 팀은 단일 계층(부서/팀 플랫)이며 계층 구조는 후속. 조직은 하나(§5.1)이며 사용자가 팀을 자유롭게 나눈다 — 콘솔 직원 탭에서 팀 생성·이름변경·아카이브·필터·배치를 제공한다(WEB-003).
+
 ### 5.4 Employee
 `id, organization_id, team_id?, employee_code(unique), display_name, job_family, specialties, grade_id(JobGrade 참조), employment_status: active|paused|on_leave|retired, availability_status: available|working|waiting|rate_limited|blocked, system_profile(직무 원칙, 민감정보 금지), custom_instructions(text?, 사용자가 작성한 개별 지시 — 직원 구성·수정 시 부여; AGENTS.md류 자유 서식), tool_policy_id, memory_policy, manager_employee_id?, created_by_user_id, retired_at?`.
 
-**구현 노트**: 구현 필드는 `name·role·gradeId·systemPrompt·customInstructions`(V7, EMP-001). `custom_instructions`는 사용자가 작성하는 개별 지시(자유 서식, AGENTS.md류)로 최대 4000자(설정 `custom_instructions_max_chars` §26) — 초과 시 400. 직원 생성(`POST /employees`)·지시 편집(`PATCH /employees/{id}`)과 웹 콘솔 직원 상세에서 설정한다. 일부 직무 정보(`organization_id·job_family·availability_status` 등)는 MVP에서 Role·status로 대체. 시스템 안전 정책·도구 제약이 항상 우선 — custom instructions로 안전 정책을 덮을 수 없다(§8.2). 현재 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
+**구현 노트**: 구현 필드는 `name·role·gradeId·systemPrompt·customInstructions`(V7, EMP-001)·`teamId`(V8, TEAM-001; nullable, 미배정=null). `custom_instructions`는 사용자가 작성하는 개별 지시(자유 서식, AGENTS.md류)로 최대 4000자(설정 `custom_instructions_max_chars` §26) — 초과 시 400. 직원 생성(`POST /employees`)·부분 갱신(`PATCH /employees/{id}` — `teamId` 키 제시 시 설정, null이면 미배정 해제)·지시 편집과 웹 콘솔 직원 상세에서 설정한다. 일부 직무 정보(`organization_id·job_family·availability_status` 등)는 MVP에서 Role·status로 대체. 시스템 안전 정책·도구 제약이 항상 우선 — custom instructions로 안전 정책을 덮을 수 없다(§8.2). 현재 직무 집합은 `Role` 열거형 `{ PLANNER, DEVELOPER, DESIGNER, PROJECT_MANAGER, TECHNICAL_WRITER, QA_ENGINEER, ARCHITECT, SECURITY_DEVOPS }`. 위 job_family는 확장 목록; 충돌 시 구현 값 기준(§28.4 체인도 Role 값으로 구성).
 
 **중요**: 직원은 개별 모델·모델 정책을 갖지 않는다. 직급 하나를 가지며 가용 모델은 직급의 풀(§5.9)로 결정. 직급 부여·변경은 사용자 수동(§15) — 자동 승진/강등 없음.
 
@@ -177,6 +182,7 @@ JobGrade(직급): `id, organization_id, code(unique: L1..), name, ordinal(int, �
 `id, organization_id, name, slug, description?, goal?, client_id?(§5.26; null=사용자 자신이 발주 고객 포지션), status: draft|planning|active|paused|blocked|completed|archived, repository_provider: local_git|github|gitlab|other, repository_url?/repository_path?(allowlist 검증), default_branch, tech_stack, definition_of_done, quality_policy_id, budget_policy_id, workspace_policy_id, document_policy_id, owner_user_id, project_lead_employee_id?, start_at?/target_end_at?, metadata`.
 
 - 저장소 경로가 workspace root 밖을 가리키지 못하게 하고 symlink 탈출도 검증.
+- **콘솔 표기(WEB-003)**: 프로젝트가 업무의 독립 단위다 — 콘솔은 "골" 대신 "프로젝트/지시"로 표기하고, 프로젝트 생성과 첫 지시(골) 접수를 지시 탭 창구에서 한 흐름으로 처리한다. `client_id`는 콘솔에서 노출하지 않는다(항상 null=사용자 자신; 외부 고객 중계는 휴면, §5.26). 프로젝트 목록·상세 조회 API를 제공한다(§17).
 
 ### 5.11 Task / TaskDependency
 공통 테이블 구현. Task 필드: `id, project_id, parent_task_id?, task_type: epic|story|task|bug|spike|documentation|review|test, title, description, acceptance_criteria(JSONB), status: draft|ready|assigned|in_progress|review|blocked|waiting_for_quota|done|failed|cancelled, priority: critical|high|normal|low, risk_level: low|medium|high|critical, complexity 1..5, assignee_employee_id?, reviewer_employee_ids, created_by_user_id?/created_by_employee_id?(자율 할당 시 orchestrator가 채움), estimated_effort?, due_at?, blocked_reason?, attempt_count, max_attempts, max_cost?, result_summary?, output_artifact_ids, related_commit_shas, completed_at?`.
@@ -254,6 +260,7 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 `id, organization_id, display_name, contact?(연락 메모), created_by_user_id, status: active|archived, notes`. 조직이 수임하는 외부 고객(사용자가 직접 유치해서 중계하는 대상; §0 원칙 11 중계자 포지션). MVP에서 외부 고객은 로그인·API 접근 권한이 없고(§28.5 확장), 사용자(운영자)가 요구·의견을 그대로 중계한다(`client_relayed`, 원문 보존+감사). 고객 개인 데이터는 요구 수행에 필요한 범위로만 전파(§21). `Project.client_id`·`ClarificationSession.client_id`가 참조하며, 세션 `client_id`는 `Project.client_id`를 상속한다(세션 생성 API에서 지시하면 override 가능).
 - 구현(MVP): 조직 테이블 없이 `organization_id` UUID 스코프(직급·모델과 동일 패턴). 중계에는 `active` 클라이언트만 사용 가능 — `archived`로의 새 연결(프로젝트 생성·세션 개설)은 409. 아카이브는 `PATCH status=archived`(기존 프로젝트·세션 연결은 보존).
 - 중계 감사: 중계 세션(`client_id≠null`) 개설·동결 시 토론 로그에 "외부 고객 {이름} 중계 — 원문 보존(§5.26)"을 남긴다. 동결 기록의 고객 원천 항목(goal_text·답변·첨부·기타 응답)은 source=`client_relayed`, 근거에 "외부 고객 {이름} 중계" 표시(§5.25).
+- **콘솔 휴면(WEB-003)**: 사용자=고객 단일 주체 원칙(§0 원칙 11)에 따라 콘솔은 고객 명부·중계 선택·중계 배지를 노출하지 않는다. API·테스트·중계 감사 기록은 보존하며, 지시 탭 창구·세션은 항상 사용자 자신의 요구로 기록된다(`client_declared`; `client_relayed`는 후속 재노출 시에만).
 
 ---
 
@@ -281,6 +288,8 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 - L5: 아키텍처·고위험 설계 검토(배포 권한은 직급과 별도) · `SPIKE, REVIEW, EPIC`
 
 Import는 5직급+8인을 한 트랜잭션 생성, `is_template_default=true`, 조직 직급 또는 사용자 직원 존재 시 409. ordinal 조직 unique; 직급 삭제는 배정 직원 0일 때만; 직급 변경은 수동(§15).
+
+**콘솔 부트스트랩(WEB-003)**: 콘솔 첫 로드 시 고정 조직·사용자 ID로 템플릿 import를 자동 호출한다 — 성공 시 직급 5·직원 8이 즉시 구성되고, 409(이미 구성됨)는 무시하고 목록을 표시한다. 시작 탭은 없다(§5.1). 팀은 자동 생성하지 않는다 — 사용자가 자유롭게 만든다(§5.3).
 
 ### 6.3 기본 모델 라우팅
 벤더·모델 ID 하드코딩 금지; 최초 실행 시 provider 탐색·capability/가격 기반 프로필 선택. 라우팅은 직급 풀 내에서(§9.2). 기본 기준: 단순 구현·포맷·초안=저비용 / 기능·테스트 분석=중간 / 아키텍처·보안·고위험 PR=고성능 / 쿼터 소진=허용 대체 모델·대기 / 로컬 전용 모드=외부 API 차단 / 가격 미상=유료 차단 또는 승인 요구 / 전환·비용·토큰·프로젝트 예산 hard limit. `quality_tier`는 운영 분류이지 절대 품질 보증이 아니다.
@@ -455,13 +464,15 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Organization / Employees**
 - `POST /organizations/template/import` — 요청 `{organizationId, userId}`; §6.2 5직급+§6.1 8인 한 트랜잭션; 중복 409
-- `GET/POST /employees`(POST/PATCH에 `customInstructions` 포함, §5.4), `GET/PATCH /employees/{id}`(`PATCH`는 `{name?, customInstructions?}` 부분 갱신 — null 유지·빈 문자열 지우기, 4000자 초과 400), `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
+- `GET/POST /employees`(POST/PATCH에 `customInstructions`·`teamId` 포함, §5.4), `GET/PATCH /employees/{id}`(`PATCH`는 `{name?, customInstructions?, teamId?}` 부분 갱신 — null 유지·빈 문자열 지우기(문자열), `teamId`는 키 제시 시 설정·null이면 팀 배정 해제, 4000자 초과 400), `GET /employees/{id}/evaluations`(§15 직급 판단 참고;최근 20건·표본·30일 평균·근거 수·평가자 수·카테고리 평균), `PATCH /employees/{id}/grade`
+
+**Teams(§5.3, TEAM-001)**: `GET/POST /teams?organizationId=`(목록·생성 — `{organizationId, name, description?}`, name 필수·공백 400, 조직 내 중복 name 409), `GET /teams/{id}`, `PATCH /teams/{id}`(부분 갱신 `{name?, description?, status?: active|archived}` — 아카이브는 소속 직원이 있으면 409), 직원 배치는 `PATCH /employees/{id}`의 `teamId`(키 제시 시 설정·null이면 미배정 해제; 미존재 팀 404, 아카이브 팀 배정 409)
 
 **Grades**: `GET/POST /grades`, `GET/PATCH/DELETE /grades/{id}`(직급 CRUD; 삭제 배정 직원 0만), `GET/PUT /grades/{id}/models`(풀+우선순위)
 
 **Models**: `GET/POST /model-providers`(`{organizationId, name(unique), providerType, baseUrl?, secretRef, enabled, rateLimitPolicy?}`; healthStatus는 UNKNOWN 시작), `POST /model-providers/{id}/health-check`(MODEL-002), `GET/POST /model-profiles`(`providerId, name(provider unique), providerModelId, capabilities, qualityTier, costs(미상=비우기), contextWindow, maxOutputTokens, supports*, latencyClass, localOnly, enabled, metadata?`)
 
-**Projects / Tasks**: `GET/POST /projects`(`{userId, name?, description?, clientId?(§5.26 외부 고객 연결, active만 — archived 409)}`), `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`, `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
+**Projects / Tasks**: `GET/POST /projects`(`GET`은 `?userId=` 소유 목록 — 최신순; `POST`는 `{userId, name?, description?, clientId?(§5.26 외부 고객 연결, active만 — archived 409)}`), `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`(`GET`은 프로젝트 업무 목록), `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
 
 **Goals / Requirements(§28)**
 - `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}], clientId?}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환; 세션 `client_id`=Project.client_id 상속, `clientId` 지시 시 override(§5.26))
@@ -483,11 +494,19 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Budgets / Usage**: `GET /budget/summary|forecast`(forecast는 추정 표기), `GET/POST/PATCH /budget/policies`, `POST /employees/{id}/budget-policies`, `GET /employees/{id}/usage`, `GET /usage-ledger`, `GET /usage-reservations`, `POST /budget/grants`(일회성)
 
-**Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
+**Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /ask`(조직 질의 `{question}` — 콘솔 지시 탭 '묻기' 창구; MVP 스텁 응답, RAG 확장 예정), `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
-### Web Console(SPA, 구현됨)
+### Web Console(SPA, 구현됨 — v1.8 IA)
 
-`frontend/`(React+TypeScript+Vite) SPA를 `front` 컨테이너(nginx)가 `/`에서 정적 서빙(SPA fallback: `try_files … /index.html`)하고 `/api`를 `web:8080`으로 프록시한다(동일 출처 — CORS 불필요). 백엔드는 JSON API 전용 — 기존 정적 콘솔(`backend/src/main/resources/static/`)은 제거됨(WEB-002). 빌드는 Docker 멀티스테이지(`node:20-alpine` 빌드 → `nginx:alpine` 런타임), `package-lock.json` 커밋+`npm ci`로 재현. 개발 시에는 `vite dev` 서버 프록시(`/api`→`localhost:8080`)(`frontend/vite.config.ts`). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)** / **직원 지시 편집(EMP-001: 직원 상세 custom_instructions 편집·저장 → `PATCH /employees/{id}`)**. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`frontend/`(React+TypeScript+Vite) SPA를 `front` 컨테이너(nginx)가 `/`에서 정적 서빙(SPA fallback: `try_files … /index.html`)하고 `/api`를 `web:8080`으로 프록시한다(동일 출처 — CORS 불필요). 백엔드는 JSON API 전용(WEB-002). 빌드는 Docker 멀티스테이지(`node:20-alpine` → `nginx:alpine`), `package-lock.json` 커밋+`npm ci`. 개발 시 `vite dev` 프록시(`/api`→`localhost:8080`).
+
+**정보구조(WEB-003)**: 좌측 사이드바 탭 = **지시 / 직원 / 직급 / 모델** (모바일: 드로어). 시작(조직 연결) 탭 없음 — 콘솔 첫 로드 시 고정 단일 조직·사용자 ID로 기본 템플릿을 자동 import하고(§6.2; 409 무시) 목록을 표시한다. 포지션 라벨("CEO"·"외부 고객")을 표시하지 않는다(§0 원칙 11).
+
+- 공통 UX: 모든 탭은 **목록 먼저** — 목록이 비면 카드 중앙 큰 생성 CTA("직원 추가" 등), 목록이 있으면 헤더 [+ 추가]로 폼 토글. 폼은 uncontrolled ref 방식(vanilla 동작 이식). 모바일 우선 반응형(44px 터치).
+- **지시 탭**: 상단 **프롬프트 창구** — 입력 1개+첨부, **[묻기]**(`POST /ask` 답변 표시) / **[지시하기]**(프로젝트 생성+첫 지시 접수 = `POST /projects`+`POST /projects/{id}/goal` §28.7-6 contentBase64 한 흐름; 프로젝트 이름은 지시 원문 첫 줄 60자(첨부 단독이면 날짜 기반)로 파생) → **프로젝트 목록**(`GET /projects?userId=`; 빈 상태 중앙 CTA) → **프로젝트 상세**: 지시 원문·첨부(파싱 등급 표시)·세션 타임라인(수신함 `GET /users/{userId}/pending-sessions` WAITING_CLIENT 강조+사이드바 배지, 질문·답변 폼 — 체크박스·라디오·기타·건너뛰기, 동결 `POST .../freeze`(clientDirective '이 정도면 진행'), 새 세션 개설(진화 §28.6)·세션 취소, 요구사항 세트 `GET /projects/{id}/requirements` 5그룹)·업무 목록+추가(`GET/POST /projects/{id}/tasks`)·평가 제출(`POST /ratings`). 표기는 "지시/프로젝트"(골은 내부 용어).
+- **직원 탭**: 팀 칩(전체/미배정/팀별 필터)+[+ 팀](생성·이름변경·아카이브 — 소속 0명일 때), 직원 목록(팀 표시)+[직원 추가](이름·직무·커스텀 지시 → `POST /employees`) → 상세: 직급 배정(`PATCH .../grade`)·팀 배정(`PATCH /employees/{id}` teamId)·커스텀 지시 편집(EMP-001)·평가 리포트(`GET /employees/{id}/evaluations`).
+- **직급 탭**: 목록+[+ 직급](추가·수정·삭제·모델 풀 §5.9). **모델 탭**: Provider/Profile 목록+추가.
+- 제거(WEB-003): 메시지·CEO Ask·외부 고객 명부·골/업무 분리 탭 — 지시 탭으로 통합(백엔드 `/messages`·`/clients` API는 유지). secret은 값이 아니라 참조만 표시.
 
 ---
 
@@ -504,11 +523,11 @@ auto-company/
     src/main/resources/
       application.yml · db/migration/   # Flyway (V1~)
     src/test/java/
-  frontend/                       # SPA 콘솔 (§17, WEB-002)
+  frontend/                       # SPA 콘솔 (§17, WEB-002·WEB-003)
     package.json · package-lock.json · vite.config.ts · tsconfig.json
     Dockerfile                    # node:20-alpine build → nginx:alpine (compose context: ./frontend)
     nginx.conf                    # /: index.html fallback, /api/: proxy → web:8080
-    src/                          # React+TS (api·ctx·tabs·components)
+    src/                          # React+TS (api·store·components·sidebar App·tabs: 지시/직원/직급/모델)
   docker-compose.yml · .env.example
   docs/DESIGN.md
   qemu-test/                      # QEMU VM 자동 검증
@@ -529,6 +548,7 @@ auto-company/
 - **Phase 3A — 명확화 파이프라인(REQ-001~005)**: §5.23~26 엔티티·전이, 골 접수 API(텍스트+첨부 §28.7)+협의 개설(Mock), 질문 구성기(개별 체크박스·기타·한도), 검토 체인+동결 불변성, waiting_client 큐+접속 표시, **사용자 개설 세션·취소(REQ-005), Client 중계(§5.26)**. 기준: 질문이 체인 통과 후 표시 / 오프라인 큐 유지 / 동결 후 수정 차단+감사 / 새 세션 진화(파이프라인·사용자 양쪽).
 - **Phase 3B — 자율 오케스트레이션(ORCH-001~002)**: 동결 기록→분해(Mock), task_types 기반 자동 배정, 재계획·에스컬레이션. 기준: 골만으로 분해·배정 진행, 부족 시 새 세션, 모든 결정 근거 기록.
 - **Phase 3C — 콘솔 SPA 분리(WEB-002)**: React+TS+Vite `frontend/`(콘솔 포팅), nginx `front` 컨테이너(정적+`/api` 프록시) 표준 진입점, 백엔드 정적 콘솔 제거, 서비스별 Dockerfile(`backend/`·`frontend/`). 기준: `docker compose up` 후 `:3000` 콘솔 동작·`:8080` API 유지, VM·Docker E2E 통과.
+- **Phase 3D — 단일 조직 콘솔 재편+팀(TEAM-001·WEB-003)**: 팀(부서) 도메인(팀 CRUD+직원 팀 배치, V8), 콘솔 IA 재편(자동 부트스트랩·시작 탭 제거, 좌측 사이드바 지시/직원/직급/모델, 지시 탭 통합 창구+프로젝트 목록·상세, 목록 우선 UX, 팀 UI, CEO/외부 고객/메시지 UI 제거, 프로젝트·업무 목록 API). 기준: 첫 접속 시 직급 5·직원 8 자동 구성, 팀 생성·배치·아카이브 409 규칙, 지시 창구 묻기/지시하기 동작, 프로젝트 목록이 서버 기준으로 표시.
 - **Phase 4 — Workspace·Git**: repository allowlist, branch/worktree, Docker provisioning, 한도, diff·test artifact, cleanup, PR 상태. 기준: 두 직원 독립 변경, 비밀 접근 없음, 정리+감사.
 - **Phase 5 — 품질 게이트·리뷰 루프**: command template, unit/lint/type/build, Review entity, 자기승인 방지, 재실행, merge policy. 기준: 테스트 실패는 승인 상태여도 merge 불가, SHA 변경 검증 무효, 수정 요청→Task 상태 연결.
 - **Phase 6 — 문서·질의응답**: docs tree, full-text, 참조 연결, freshness, 근거 링크+불확실성, 담당 workflow. 기준: 근거 반환, 부재 시 미확인 표시, 변경→문서 검토 Task.
@@ -639,13 +659,13 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 ## 24. MVP 인수 기준
 
-1. 문서대로 로컬 Compose 설치 성공. 2. 최초 관리자+기본 조직 템플릿 생성. 3. 직무·직급·모델 풀 독립 설정; 배정 직원이 있으면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골(텍스트+첨부)→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만; 사용자가 자발적으로 전문 요구를 제시한 경우 예외 — client_declared 수용).** 23. **첨부 접수: Artifact 보존+추출 근거 기록; 파싱 불가 유형은 원본 보존+텍스트 보강 요청(§28.7).** 24. **직원 custom_instructions가 AgentRun 컨텍스트에 포함(§8.2).** 25. **사용자 개설 세션→동결→새 RequirementSet 버전 승계; 동시 세션 2개 409(§28.6).** 26. **외부 고객 중계: Client 등록, 원문 보존+`client_relayed` 표시+감사(§5.26).** 27. **웹 콘솔=SPA(`front`:3000, nginx) 분리 서빙; `/api`→`web` 프록시 동작, 백엔드 정적 콘솔 없음(WEB-002).**
+1. 문서대로 로컬 Compose 설치 성공. 2. 콘솔 첫 접속 시 단일 조직+기본 템플릿(직급 5·직원 8) 자동 구성(§6.2). 3. 직무·직급·모델 풀 독립 설정; 배정 직원이 있으면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골(텍스트+첨부)→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만; 사용자가 자발적으로 전문 요구를 제시한 경우 예외 — client_declared 수용).** 23. **첨부 접수: Artifact 보존+추출 근거 기록; 파싱 불가 유형은 원본 보존+텍스트 보강 요청(§28.7).** 24. **직원 custom_instructions가 AgentRun 컨텍스트에 포함(§8.2).** 25. **사용자 개설 세션→동결→새 RequirementSet 버전 승계; 동시 세션 2개 409(§28.6).** 26. **외부 고객 중계: Client 등록, 원문 보존+`client_relayed` 표시+감사(§5.26).** (구현·테스트 보존; 콘솔 UI는 v1.8부터 휴면 — 지시 창구는 항상 사용자 자신의 요구) 27. **웹 콘솔=SPA(`front`:3000, nginx) 분리 서빙; `/api`→`web` 프록시 동작, 백엔드 정적 콘솔 없음(WEB-002).** 28. **첫 접속 시 시작 탭 없이 단일 조직+기본 템플릿(직급 5·직원 8)이 자동 구성된다(TEAM-001·WEB-003).** 29. **콘솔 탭=좌측 사이드바(지시·직원·직급·모델); 각 탭은 목록 먼저, 빈 목록은 중앙 생성 CTA — "골"·"CEO"·"외부 고객" 표기가 없다.** 30. **지시 탭=프롬프트 창구([묻기]/[지시하기])+프로젝트 목록·상세 통합; 메시지·CEO Ask UI 없음.** 31. **팀(부서) 생성·직원 배치 동작; 팀 아카이브는 소속 직원 0명일 때만(409).**
 
 ---
 
 ## 25. 결정 사항 요약(규범)
 
-1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자는 다중 포지션**: 운영자(조직·직급·모델 풀·직원 개별 지시 구성 권한 — 이미 구현), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 제시한 기술·디자인 지시는 `client_declared` 제약 수용), 외부 고객 중계자. 전문성 고정 단정 금지 — 신호 기반 적응(§28.2); 기술 결정 기본은 내부 처리. 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전 — 파이프라인과 사용자 양쪽에서 새 세션 개설 가능(§28.6).** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.** 25. **골 입력은 텍스트+파일·이미지 첨부; 지원 불가·파싱 실패 유형은 원본 보존+텍스트 보강 요청, 첨부 근거는 요구 항목에 기록(§28.7).** 26. **직원 `custom_instructions`(사용자 작성 개별 지시, AGENTS.md류)는 모든 AgentRun 컨텍스트에 주입된다; 시스템 안전 정책이 우선(§8.2).** 27. **외부 고객은 자체 로그인 없이 운영자가 중계한다; 원문 보존·감사·`client_relayed` 표시(§5.26).** 28. **프론트엔드=React+TS+Vite SPA(`frontend/`)+nginx `front` 컨테이너(표준 진입점 `:3000`); 백엔드는 JSON API 전용(정적 콘솔 제거), Dockerfile은 서비스 디렉터리별 배치(WEB-002).**
+1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자=하나의 주체, 두 포지션**: 운영자(팀·직원·직급·모델 풀·직원 개별 지시 구성)와 고객(지시 창구에서 요구 제출·명확화 답변·인수)을 오간다; 콘솔에 포지션 라벨("CEO"·"외부 고객")을 표시하지 않는다. 외부 고객 중계(§5.26)는 구현 보존·콘솔 휴면(WEB-003). 전문성 고정 단정 금지 — 신호 기반 적응(§28.2); 기술 결정 기본은 내부 처리. 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전 — 파이프라인과 사용자 양쪽에서 새 세션 개설 가능(§28.6).** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.** 25. **골 입력은 텍스트+파일·이미지 첨부; 지원 불가·파싱 실패 유형은 원본 보존+텍스트 보강 요청, 첨부 근거는 요구 항목에 기록(§28.7).** 26. **직원 `custom_instructions`(사용자 작성 개별 지시, AGENTS.md류)는 모든 AgentRun 컨텍스트에 주입된다; 시스템 안전 정책이 우선(§8.2).** 27. **외부 고객은 자체 로그인 없이 운영자가 중계한다; 원문 보존·감사·`client_relayed` 표시(§5.26).** (v1.8부터 콘솔 UI 휴면 — API·테스트 보존) 28. **프론트엔드=React+TS+Vite SPA(`frontend/`)+nginx `front` 컨테이너(표준 진입점 `:3000`); 백엔드는 JSON API 전용(정적 콘솔 제거), Dockerfile은 서비스 디렉터리별 배치(WEB-002).** 29. **단일 조직·단일 사용자**: 조직은 하나이고 변하지 않는다 — 콘솔은 고정 조직 ID로 동작하고 조직 생성·전환 UI가 없다. 그 안에서 팀/부서 구성과 직원 배치는 사용자 자유(§5.1·§5.3). 30. **콘솔 IA=좌측 사이드바(지시·직원·직급·모델)+목록 우선 UX**: 시작 탭 없음(자동 부트스트랩 — 직급 5·직원 8), 빈 목록은 중앙 생성 CTA, 내부 도메인 용어 '골'은 콘솔에서 '지시/프로젝트'로 표기(WEB-003). 31. **지시 탭=단일 프롬프트 창구([묻기]/[지시하기])+프로젝트 중심 통합**: 묻기=`POST /ask` 조직 질의, 지시하기=프로젝트 생성+첫 지시 접수; 메시지·CEO Ask UI 제거(API 유지). 32. **팀(부서)=단일 계층 CRUD+직원 배치(`employees.team_id`, V8)**: 팀 아카이브는 소속 직원 0명일 때만(409) — 직급 삭제와 동일 원칙(TEAM-001).
 
 ---
 
@@ -670,6 +690,8 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 **콘솔·구조(v1.7)**: 38. `WEB-002` 콘솔 SPA 분리(React+TS+Vite `frontend/` 포팅, nginx `front` 컨테이너+`/api` 프록시, 백엔드 정적 콘솔 제거, 서비스별 Dockerfile).
 
+**콘솔 재편·팀(v1.8)**: 39. `TEAM-001` 팀(부서) 도메인 — Team 엔티티+CRUD API+`employees.team_id`(V8)+직원 팀 배치(아카이브 409 규칙). 40. `WEB-003` 콘솔 IA 재편 — 단일 조직 자동 부트스트랩(시작 탭 제거), 좌측 사이드바(지시·직원·직급·모델), 지시 탭 통합(프롬프트 창구+프로젝트 목록·상세), 목록 우선 UX(빈 상태 CTA), 팀 UI, 프로젝트·업무 목록 API, CEO/외부 고객/메시지 UI 제거.
+
 사용량 제한 우선순위: (1) 실 usage 기록·정산 정확화 → (2) BudgetPolicy 조회+호출 전 원자적 예약 → (3) 비용·토큰·요청 기간 집계(rolling 경계 포함) → (4) `WAITING_FOR_QUOTA`·retry_after_at 저장+재개 조건만 scheduler 재시도 → (5) 경고·잔여 UI+grant. 테스트: 동시 예약 경쟁(잔여 초과), timeout 과금 불명, 월 경계·시간대, rolling 경계, fallback 자체 한도 초과.
 
 ---
@@ -678,14 +700,14 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 중심은 "AI 직원 여러 명"이 아니라: 지속 직원·조직 모델+사용자 정의 직급·모델 풀 / 재개 가능 워크플로 / 교체 가능 다중 모델 런타임 / 격리 개발환경 / Git 기반 변경 관리 / 독립 품질 게이트 / 근거 기반 평가·문서 지식 / 예산·권한·시간 강제의 조합이다. 이 구조로 로컬에서 시작해 이후 분산·VM으로 확장해도 핵심 도메인 유지.
 
-**최우선 수직 기능**: “발주 고객(사용자 또는 중계된 외부 고객)이 프롬프트와 요구 문서·디자인 첨부로 요구사항을 말하면, AI 직원들이 내부 협의 후 최소한의 구조화된 질문을 통해 요구사항을 확정하고, 이를 불변 기록으로 동결한 뒤, 스스로 작업을 분해·배정해 격리된 Docker 환경에서 구현하고 테스트와 리뷰를 거쳐 결과 리포트를 전달한다. 요구가 바뀌면 고객이나 직원들이 새 세션을 열어 같은 절차로 진화시킨다.” 이 흐름이 안정된 뒤 회의·평가·자율 유지보수를 확장한다.
+**최우선 수직 기능**: “발주 고객(콘솔에서는 사용자 자신)이 프롬프트와 요구 문서·디자인 첨부로 요구사항을 말하면, AI 직원들이 내부 협의 후 최소한의 구조화된 질문을 통해 요구사항을 확정하고, 이를 불변 기록으로 동결한 뒤, 스스로 작업을 분해·배정해 격리된 Docker 환경에서 구현하고 테스트와 리뷰를 거쳐 결과 리포트를 전달한다. 요구가 바뀌면 고객이나 직원들이 새 세션을 열어 같은 절차로 진화시킨다.” 이 흐름이 안정된 뒤 회의·평가·자율 유지보수를 확장한다.
 
 ---
 
 ## 28. 요구사항 명확화 파이프라인
 
 ### 28.1 배경과 포지션
-골을 제출하는 쪽은 **발주 고객 포지션**(§0 원칙 11)이다 — 사용자 자신이거나, 운영자가 유치해 중계하는 외부 고객(§5.26)이다. 고객은 "블로그 사이트 만들어줘" 같은 텍스트 프롬프트와 전문 자료 첨부(§28.7)로 요청하고, 기획·설계·구현·검증 방법은 직원들 내부 협의로 정한다. 문제는 **고객이 항상 온라인이 아니다**라는 점 — 웹은 실시간 푸시가 어렵고, 잦은 알림은 고객 경험을 해친다. 따라서:
+골을 제출하는 쪽은 **고객 포지션**(§0 원칙 11)이다 — 콘솔에서는 항상 사용자 자신이다(v1.8; 외부 고객 중계 §5.26은 구현 보존·휴면). 고객은 "블로그 사이트 만들어줘" 같은 텍스트 프롬프트와 전문 자료 첨부(§28.7)로 요청하고, 기획·설계·구현·검증 방법은 직원들 내부 협의로 정한다. 문제는 **고객이 항상 온라인이 아니다**라는 점 — 웹은 실시간 푸시가 어렵고, 잦은 알림은 고객 경험을 해친다. 따라서:
 1. 직원들 협의로 스스로 해결할 수 있는 것은 최대한 내부에서 진행.
 2. 반드시 고객 입력이 필요한 지점만 **최소 구조화 질문**으로 추림.
 3. 질문은 세션 큐에 쌓이고, 고객이 접속 시 확인·응답.
@@ -772,7 +794,7 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 ## 29. 자율 오케스트레이션
 
 ### 29.1 원칙
-발주 고객(사용자 또는 중계 고객)이 직원마다 일일이 할당하지 않는다. 분해·배정·실행·재계획을 Orchestrator가 수행. 근거는 동결 RequirementSet뿐 — 근거 없는 기능 작업 생성 없음. 요구 진화(사용자 개설 세션 포함, §28.6)가 이어져도 이 원칙은 유지된다. 한도(라운드·예산·시간·재시도·격리·주요 승인)는 §13/§16/§21 정책 동일 유지.
+발주 고객(콘솔에서는 사용자 자신)이 직원마다 일일이 할당하지 않는다. 분해·배정·실행·재계획을 Orchestrator가 수행. 근거는 동결 RequirementSet뿐 — 근거 없는 기능 작업 생성 없음. 요구 진화(사용자 개설 세션 포함, §28.6)가 이어져도 이 원칙은 유지된다. 한도(라운드·예산·시간·재시도·격리·주요 승인)는 §13/§16/§21 정책 동일 유지.
 
 ### 29.2 사이클
 ```

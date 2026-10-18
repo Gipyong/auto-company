@@ -26,6 +26,10 @@ public class Employee {
     
     @Column(name = "grade_id")
     private UUID gradeId;
+
+    // §5.3 TEAM-001 — 소속 팀(부서). null=미배정; 아카이브 팀 배정 불가(409)
+    @Column(name = "team_id")
+    private UUID teamId;
     
     private String dockerContainerId;
     

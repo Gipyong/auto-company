@@ -10,4 +10,7 @@ import java.util.UUID;
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @EntityGraph(attributePaths = "user")
     List<Project> findByUserId(UUID userId);
+
+    @EntityGraph(attributePaths = "user")
+    List<Project> findByUserIdOrderByCreatedAtDesc(UUID userId);
 }

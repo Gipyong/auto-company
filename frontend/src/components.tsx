@@ -134,3 +134,26 @@ export function FileChips({ files, onRemove }: { files: File[]; onRemove?: (i: n
     </div>
   );
 }
+
+/** §17 WEB-003 — 목록 우선 UX: 빈 목록은 카드 중앙 큰 생성 CTA */
+export function EmptyState({
+  title,
+  hint,
+  action,
+  onAction,
+}: {
+  title: string;
+  hint?: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="empty-state">
+      <div className="empty-title">{title}</div>
+      {hint ? <div className="empty-hint">{hint}</div> : null}
+      <button className="btn primary empty-cta" onClick={onAction}>
+        {action}
+      </button>
+    </div>
+  );
+}

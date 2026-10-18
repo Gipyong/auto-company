@@ -22,10 +22,12 @@ import java.util.UUID;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -389,7 +391,8 @@ public class EmployeeIntegrationTest {
         com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder()
                 .name("김개발").customInstructions("항상 테스트 먼저").build();
         employee.setId(employeeId);
-        when(employeeService.updateEmployee(eq(employeeId), any(), eq("항상 테스트 먼저"))).thenReturn(employee);
+        when(employeeService.updateEmployee(eq(employeeId), any(), eq("항상 테스트 먼저"), any(), anyBoolean()))
+                .thenReturn(employee);
 
         mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -400,7 +403,7 @@ public class EmployeeIntegrationTest {
     @Test
     public void testUpdateEmployeeInstructionsOverLimitReturns400() throws Exception {
         UUID employeeId = UUID.randomUUID();
-        when(employeeService.updateEmployee(eq(employeeId), any(), any()))
+        when(employeeService.updateEmployee(eq(employeeId), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IllegalArgumentException("customInstructions exceeds 4000 chars (§26 custom_instructions_max_chars: 400)"));
 
         mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
@@ -412,7 +415,7 @@ public class EmployeeIntegrationTest {
     @Test
     public void testUpdateEmployeeMissingReturns404() throws Exception {
         UUID employeeId = UUID.randomUUID();
-        when(employeeService.updateEmployee(eq(employeeId), any(), any()))
+        when(employeeService.updateEmployee(eq(employeeId), any(), any(), any(), anyBoolean()))
                 .thenThrow(new java.util.NoSuchElementException("Employee not found: " + employeeId));
 
         mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
@@ -427,7 +430,7 @@ public class EmployeeIntegrationTest {
         com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder()
                 .name("이개발").customInstructions("보안 우선").build();
         employee.setId(UUID.randomUUID());
-        when(employeeService.createEmployee(eq(userId), eq("이개발"), eq("DEVELOPER"), eq("보안 우선")))
+        when(employeeService.createEmployee(eq(userId), eq("이개발"), eq("DEVELOPER"), eq("보안 우선"), any()))
                 .thenReturn(employee);
 
         mockMvc.perform(post("/api/v1/employees")
@@ -435,5 +438,105 @@ public class EmployeeIntegrationTest {
                 .content("{\"userId\":\"" + userId + "\",\"name\":\"이개발\",\"role\":\"DEVELOPER\","
                         + "\"customInstructions\":\"보안 우선\"}"))
                 .andExpect(status().isCreated());
+    }
+
+    // ==================== TEAM-001 팀 배치·아카이브 (§5.3) ====================
+
+    @Test
+    public void testAssignTeamIdPresentReturns200() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID();
+        com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder().name("김개발").build();
+        employee.setId(employeeId);
+        employee.setTeamId(teamId);
+        when(employeeService.updateEmployee(eq(employeeId), any(), any(), eq(teamId), eq(true))).thenReturn(employee);
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(employeeService).updateEmployee(eq(employeeId), any(), any(), eq(teamId), eq(true));
+    }
+
+    @Test
+    public void testClearTeamIdPresentNullReturns200() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder().name("김개발").build();
+        employee.setId(employeeId);
+        when(employeeService.updateEmployee(eq(employeeId), any(), any(), isNull(), eq(true))).thenReturn(employee);
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"teamId\":null}"))
+                .andExpect(status().isOk());
+
+        verify(employeeService).updateEmployee(eq(employeeId), any(), any(), isNull(), eq(true));
+    }
+
+    @Test
+    public void testPatchWithoutTeamIdKeyKeepsTeam() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder().name("새이름").build();
+        employee.setId(employeeId);
+        when(employeeService.updateEmployee(eq(employeeId), eq("새이름"), any(), isNull(), eq(false))).thenReturn(employee);
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"새이름\"}"))
+                .andExpect(status().isOk());
+
+        verify(employeeService).updateEmployee(eq(employeeId), eq("새이름"), any(), isNull(), eq(false));
+    }
+
+    @Test
+    public void testAssignArchivedTeamReturns409() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID();
+        when(employeeService.updateEmployee(eq(employeeId), any(), any(), eq(teamId), eq(true)))
+                .thenThrow(new IllegalStateException("Archived team cannot accept new members (§5.3: 409)"));
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"teamId\":\"" + teamId + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    // ==================== WEB-003 프로젝트 목록·상세·업무 (§17) ====================
+
+    @Test
+    public void testGetProjectsReturns200() throws Exception {
+        UUID userId = UUID.randomUUID();
+        com.autocompany.entity.Project project = com.autocompany.entity.Project.builder().name("블로그").build();
+        project.setId(UUID.randomUUID());
+        when(projectService.getProjectsByUser(userId)).thenReturn(List.of(project));
+
+        mockMvc.perform(get("/api/v1/projects").param("userId", userId.toString())
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(projectService).getProjectsByUser(userId);
+    }
+
+    @Test
+    public void testGetProjectMissingReturns404() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(projectService.getProject(projectId)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/projects/{id}", projectId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void testGetProjectTasksReturns200() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(taskService.getTasksByProject(projectId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/projects/{id}/tasks", projectId)
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        verify(taskService).getTasksByProject(projectId);
     }
 }

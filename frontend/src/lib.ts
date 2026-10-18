@@ -1,5 +1,9 @@
 import type { GoalAttachmentPayload, Profile, Question } from "./types";
 
+// §5.1 WEB-003 — 단일 조직·단일 사용자 고정 컨텍스트(조직 생성·전환 UI 없음)
+export const ORG_ID = "a0000000-0000-4000-8000-000000000001";
+export const USER_ID = "a0000000-0000-4000-8000-000000000002";
+
 export const fmtDate = (s?: string | null): string =>
   s ? new Date(s).toLocaleString("ko-KR") : "-";
 
@@ -120,4 +124,16 @@ export function firstUnansweredPrompt(questions: Question[]): Question | null {
     if (!ok) return q;
   }
   return null;
+}
+
+/** §17 WEB-003 — 지시 창구: 지시 원문 첫 줄로 프로젝트 이름을 만든다(첨부 단독이면 날짜 기반) */
+export function deriveProjectName(goalText: string, now: Date = new Date()): string {
+  const firstLine = goalText
+    .split("\n")
+    .map((s) => s.trim())
+    .find((s) => s.length > 0);
+  if (firstLine) {
+    return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+  }
+  return `첨부 지시 ${now.toLocaleDateString("ko-KR")}`;
 }

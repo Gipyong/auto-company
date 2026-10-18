@@ -3,18 +3,21 @@ import { api } from "../api";
 import { useStore } from "../store";
 import { useToast } from "../toast";
 import { fmtNum } from "../lib";
-import { Badge } from "../components";
+import { Badge, EmptyState } from "../components";
 
-export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
+export default function ModelsTab() {
   const store = useStore();
   const toast = useToast();
   const [provSaving, setProvSaving] = useState(false);
   const [profSaving, setProfSaving] = useState(false);
+  const [showProvForm, setShowProvForm] = useState(false);
+  const [showProfForm, setShowProfForm] = useState(false);
 
   const provNameRef = useRef<HTMLInputElement>(null);
   const provTypeRef = useRef<HTMLSelectElement>(null);
   const provBaseUrlRef = useRef<HTMLInputElement>(null);
   const provSecretRef = useRef<HTMLInputElement>(null);
+  const provFormRef = useRef<HTMLDivElement>(null);
 
   const profProviderRef = useRef<HTMLSelectElement>(null);
   const profNameRef = useRef<HTMLInputElement>(null);
@@ -30,18 +33,25 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
   const profJsonRef = useRef<HTMLInputElement>(null);
   const profStreamRef = useRef<HTMLInputElement>(null);
   const profLocalRef = useRef<HTMLInputElement>(null);
+  const profFormRef = useRef<HTMLDivElement>(null);
 
-  const requireCtx = () => {
-    if (!store.ctx) {
-      toast.show("먼저 '시작' 탭에서 조직을 연결하세요.", "err");
-      goSetup();
-      return false;
-    }
-    return true;
+  const openProvForm = () => {
+    setShowProvForm(true);
+    window.setTimeout(
+      () => provFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      50
+    );
+  };
+
+  const openProfForm = () => {
+    setShowProfForm(true);
+    window.setTimeout(
+      () => profFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      50
+    );
   };
 
   const saveProvider = async () => {
-    if (!requireCtx()) return;
     const name = provNameRef.current?.value.trim() || "";
     if (!name) {
       toast.show("Provider 이름을 입력하세요.", "err");
@@ -50,7 +60,7 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
     setProvSaving(true);
     try {
       await api("POST", "/api/v1/model-providers", {
-        organizationId: store.ctx!.organizationId,
+        organizationId: store.ctx.organizationId,
         name,
         providerType: provTypeRef.current?.value,
         baseUrl: provBaseUrlRef.current?.value.trim() || null,
@@ -60,6 +70,7 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
       if (provNameRef.current) provNameRef.current.value = "";
       if (provBaseUrlRef.current) provBaseUrlRef.current.value = "";
       if (provSecretRef.current) provSecretRef.current.value = "";
+      setShowProvForm(false);
       toast.show("Provider를 추가했습니다.");
       await store.refreshAll();
     } catch (e) {
@@ -70,7 +81,6 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
   };
 
   const saveProfile = async () => {
-    if (!requireCtx()) return;
     const providerId = profProviderRef.current?.value || "";
     const name = profNameRef.current?.value.trim() || "";
     const providerModelId = profModelIdRef.current?.value.trim() || "";
@@ -114,6 +124,7 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
       if (profNameRef.current) profNameRef.current.value = "";
       if (profModelIdRef.current) profModelIdRef.current.value = "";
       if (profCapsRef.current) profCapsRef.current.value = "";
+      setShowProfForm(false);
       toast.show("Profile을 추가했습니다.");
       await store.refreshAll();
     } catch (e) {
@@ -129,154 +140,206 @@ export default function ModelsTab({ goSetup }: { goSetup: () => void }) {
   return (
     <>
       <div className="card">
-        <h2>Provider 추가</h2>
-        <label htmlFor="provName">이름</label>
-        <input id="provName" ref={provNameRef} autoComplete="off" placeholder="예: OpenAI, 로컬 Ollama" />
-        <label htmlFor="provType">유형</label>
-        <select id="provType" ref={provTypeRef} defaultValue="OPENAI_COMPATIBLE">
-          <option value="OPENAI_COMPATIBLE">OPENAI_COMPATIBLE</option>
-          <option value="ANTHROPIC">ANTHROPIC</option>
-          <option value="OLLAMA">OLLAMA</option>
-          <option value="CUSTOM">CUSTOM</option>
-        </select>
-        <label htmlFor="provBaseUrl">Base URL (선택)</label>
-        <input id="provBaseUrl" ref={provBaseUrlRef} autoComplete="off" placeholder="http://localhost:11434" />
-        <label htmlFor="provSecretRef">Secret 참조 (선택 — 값이 아니라 환경변수/secret 이름만)</label>
-        <input id="provSecretRef" ref={provSecretRef} autoComplete="off" placeholder="OPENAI_API_KEY" />
-        <button id="btnProvSave" className="btn primary" disabled={provSaving} onClick={saveProvider}>
-          Provider 추가
-        </button>
+        <div className="row between">
+          <h2>
+            Provider <Badge>{store.providers.length}</Badge>
+          </h2>
+          {store.providers.length ? (
+            <button id="btnProvToggle" className="btn ghost small" onClick={() => setShowProvForm((v) => !v)}>
+              {showProvForm ? "닫기" : "+ Provider 추가"}
+            </button>
+          ) : null}
+        </div>
+        <div className="list" id="providerList">
+          {!store.providers.length ? (
+            showProvForm ? null : (
+              <EmptyState
+                title="아직 Provider가 없습니다"
+                hint="모델 Provider(OpenAI 호환·Anthropic·Ollama 등)를 추가하면 Profile과 직급 모델 풀을 구성할 수 있습니다."
+                action="첫 Provider 추가"
+                onAction={openProvForm}
+              />
+            )
+          ) : (
+            store.providers.map((p) => {
+              const health =
+                ({ HEALTHY: "green", DEGRADED: "amber", UNAVAILABLE: "red" } as Record<string, string>)[
+                  p.healthStatus
+                ] || "";
+              return (
+                <div className="item" key={p.id}>
+                  <div className="title">
+                    {p.name} <Badge kind="indigo">{p.providerType}</Badge>{" "}
+                    <Badge kind={health}>{p.healthStatus}</Badge>{" "}
+                    <Badge kind={p.enabled ? "green" : ""}>{p.enabled ? "enabled" : "disabled"}</Badge>
+                  </div>
+                  <div className="sub">
+                    {p.baseUrl ? p.baseUrl : "base URL 없음"}
+                    {p.secretRef ? ` · secretRef: ${p.secretRef}` : ""}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
-      <div className="list" id="providerList">
-        {!store.providers.length ? (
-          <div className="item">
-            <div className="sub">Provider가 없습니다.</div>
+
+      {showProvForm ? (
+        <div className="card" ref={provFormRef}>
+          <div className="row between">
+            <h2>Provider 추가</h2>
+            <button className="btn ghost small" onClick={() => setShowProvForm(false)}>
+              취소
+            </button>
           </div>
-        ) : (
-          store.providers.map((p) => {
-            const health =
-              ({ HEALTHY: "green", DEGRADED: "amber", UNAVAILABLE: "red" } as Record<string, string>)[
-                p.healthStatus
-              ] || "";
-            return (
+          <label htmlFor="provName">이름</label>
+          <input id="provName" ref={provNameRef} autoComplete="off" placeholder="예: OpenAI, 로컬 Ollama" />
+          <label htmlFor="provType">유형</label>
+          <select id="provType" ref={provTypeRef} defaultValue="OPENAI_COMPATIBLE">
+            <option value="OPENAI_COMPATIBLE">OPENAI_COMPATIBLE</option>
+            <option value="ANTHROPIC">ANTHROPIC</option>
+            <option value="OLLAMA">OLLAMA</option>
+            <option value="CUSTOM">CUSTOM</option>
+          </select>
+          <label htmlFor="provBaseUrl">Base URL (선택)</label>
+          <input id="provBaseUrl" ref={provBaseUrlRef} autoComplete="off" placeholder="http://localhost:11434" />
+          <label htmlFor="provSecretRef">Secret 참조 (선택 — 값이 아니라 환경변수/secret 이름만)</label>
+          <input id="provSecretRef" ref={provSecretRef} autoComplete="off" placeholder="OPENAI_API_KEY" />
+          <button id="btnProvSave" className="btn primary" disabled={provSaving} onClick={saveProvider}>
+            Provider 추가
+          </button>
+        </div>
+      ) : null}
+
+      <div className="card">
+        <div className="row between">
+          <h2>
+            모델 Profile <Badge>{store.profiles.length}</Badge>
+          </h2>
+          {store.profiles.length ? (
+            <button id="btnProfToggle" className="btn ghost small" onClick={() => setShowProfForm((v) => !v)}>
+              {showProfForm ? "닫기" : "+ Profile 추가"}
+            </button>
+          ) : null}
+        </div>
+        <div className="list" id="profileList">
+          {!store.profiles.length ? (
+            showProfForm ? null : (
+              <EmptyState
+                title="아직 모델 Profile이 없습니다"
+                hint="Profile은 실제 모델 ID·비용·능력 메타데이터입니다. Provider를 먼저 만든 뒤 추가하세요."
+                action="첫 Profile 추가"
+                onAction={store.providers.length ? openProfForm : openProvForm}
+              />
+            )
+          ) : (
+            store.profiles.map((p) => (
               <div className="item" key={p.id}>
                 <div className="title">
-                  {p.name} <Badge kind="indigo">{p.providerType}</Badge>{" "}
-                  <Badge kind={health}>{p.healthStatus}</Badge>{" "}
+                  {p.name} <Badge>tier {p.qualityTier == null ? "-" : p.qualityTier}</Badge>{" "}
+                  <Badge>{p.latencyClass || "UNKNOWN"}</Badge>
+                  {p.localOnly ? <Badge>local</Badge> : null}
                   <Badge kind={p.enabled ? "green" : ""}>{p.enabled ? "enabled" : "disabled"}</Badge>
                 </div>
                 <div className="sub">
-                  {p.baseUrl ? p.baseUrl : "base URL 없음"}
-                  {p.secretRef ? ` · secretRef: ${p.secretRef}` : ""}
+                  {providerName(p)} · {p.providerModelId} · 입력{" "}
+                  {p.inputCostPerMillion == null ? "미상" : "$" + p.inputCostPerMillion + "/1M"} · 출력{" "}
+                  {p.outputCostPerMillion == null ? "미상" : "$" + p.outputCostPerMillion + "/1M"} · ctx{" "}
+                  {fmtNum(p.contextWindow)}
                 </div>
+                {p.capabilities && p.capabilities.length ? (
+                  <div className="chips">
+                    {p.capabilities.map((c) => (
+                      <span className="chip" key={c}>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            );
-          })
-        )}
+            ))
+          )}
+        </div>
       </div>
 
-      <div className="card">
-        <h2>모델 Profile 추가</h2>
-        <label htmlFor="profProvider">Provider</label>
-        <select id="profProvider" ref={profProviderRef}>
-          {store.providers.length ? (
-            store.providers.map((p) => (
-              <option value={p.id} key={p.id}>
-                {p.name}
-              </option>
-            ))
-          ) : (
-            <option value="">Provider 없음</option>
-          )}
-        </select>
-        <label htmlFor="profName">이름</label>
-        <input id="profName" ref={profNameRef} autoComplete="off" placeholder="예: gpt-4o-mini" />
-        <label htmlFor="profModelId">Provider 모델 ID (필수)</label>
-        <input id="profModelId" ref={profModelIdRef} autoComplete="off" placeholder="gpt-4o-mini" />
-        <div className="row2">
-          <div>
-            <label htmlFor="profTier">Quality Tier (0~3)</label>
-            <input id="profTier" ref={profTierRef} type="number" min={0} max={3} inputMode="numeric" />
+      {showProfForm ? (
+        <div className="card" ref={profFormRef}>
+          <div className="row between">
+            <h2>모델 Profile 추가</h2>
+            <button className="btn ghost small" onClick={() => setShowProfForm(false)}>
+              취소
+            </button>
           </div>
-          <div>
-            <label htmlFor="profLatency">Latency</label>
-            <select id="profLatency" ref={profLatencyRef} defaultValue="">
-              <option value="">UNKNOWN</option>
-              <option value="LOW">LOW</option>
-              <option value="MEDIUM">MEDIUM</option>
-              <option value="HIGH">HIGH</option>
-            </select>
-          </div>
-        </div>
-        <div className="row2">
-          <div>
-            <label htmlFor="profInCost">입력 비용 ($/1M, 비우면 미상)</label>
-            <input id="profInCost" ref={profInCostRef} type="number" step="0.01" inputMode="decimal" />
-          </div>
-          <div>
-            <label htmlFor="profOutCost">출력 비용 ($/1M, 비우면 미상)</label>
-            <input id="profOutCost" ref={profOutCostRef} type="number" step="0.01" inputMode="decimal" />
-          </div>
-        </div>
-        <div className="row2">
-          <div>
-            <label htmlFor="profCtx">Context window</label>
-            <input id="profCtx" ref={profCtxRef} type="number" inputMode="numeric" />
-          </div>
-          <div>
-            <label htmlFor="profMaxOut">Max output tokens</label>
-            <input id="profMaxOut" ref={profMaxOutRef} type="number" inputMode="numeric" />
-          </div>
-        </div>
-        <label htmlFor="profCaps">Capabilities (콤마: code, reasoning, json_mode, tool_calling)</label>
-        <input id="profCaps" ref={profCapsRef} autoComplete="off" />
-        <label className="check">
-          <input id="profTool" ref={profToolRef} type="checkbox" /> tool calling 지원
-        </label>
-        <label className="check">
-          <input id="profJson" ref={profJsonRef} type="checkbox" /> JSON schema 지원
-        </label>
-        <label className="check">
-          <input id="profStream" ref={profStreamRef} type="checkbox" /> streaming 지원
-        </label>
-        <label className="check">
-          <input id="profLocal" ref={profLocalRef} type="checkbox" /> local only
-        </label>
-        <button id="btnProfSave" className="btn primary" disabled={profSaving} onClick={saveProfile}>
-          Profile 추가
-        </button>
-      </div>
-      <div className="list" id="profileList">
-        {!store.profiles.length ? (
-          <div className="item">
-            <div className="sub">모델 Profile이 없습니다.</div>
-          </div>
-        ) : (
-          store.profiles.map((p) => (
-            <div className="item" key={p.id}>
-              <div className="title">
-                {p.name} <Badge>tier {p.qualityTier == null ? "-" : p.qualityTier}</Badge>{" "}
-                <Badge>{p.latencyClass || "UNKNOWN"}</Badge>
-                {p.localOnly ? <Badge>local</Badge> : null}
-                <Badge kind={p.enabled ? "green" : ""}>{p.enabled ? "enabled" : "disabled"}</Badge>
-              </div>
-              <div className="sub">
-                {providerName(p)} · {p.providerModelId} · 입력{" "}
-                {p.inputCostPerMillion == null ? "미상" : "$" + p.inputCostPerMillion + "/1M"} · 출력{" "}
-                {p.outputCostPerMillion == null ? "미상" : "$" + p.outputCostPerMillion + "/1M"} · ctx{" "}
-                {fmtNum(p.contextWindow)}
-              </div>
-              {p.capabilities && p.capabilities.length ? (
-                <div className="chips">
-                  {p.capabilities.map((c) => (
-                    <span className="chip" key={c}>{c}</span>
-                  ))}
-                </div>
-              ) : null}
+          <label htmlFor="profProvider">Provider</label>
+          <select id="profProvider" ref={profProviderRef}>
+            {store.providers.length ? (
+              store.providers.map((p) => (
+                <option value={p.id} key={p.id}>
+                  {p.name}
+                </option>
+              ))
+            ) : (
+              <option value="">Provider 없음</option>
+            )}
+          </select>
+          <label htmlFor="profName">이름</label>
+          <input id="profName" ref={profNameRef} autoComplete="off" placeholder="예: gpt-4o-mini" />
+          <label htmlFor="profModelId">Provider 모델 ID (필수)</label>
+          <input id="profModelId" ref={profModelIdRef} autoComplete="off" placeholder="gpt-4o-mini" />
+          <div className="row2">
+            <div>
+              <label htmlFor="profTier">Quality Tier (0~3)</label>
+              <input id="profTier" ref={profTierRef} type="number" min={0} max={3} inputMode="numeric" />
             </div>
-          ))
-        )}
-      </div>
+            <div>
+              <label htmlFor="profLatency">Latency</label>
+              <select id="profLatency" ref={profLatencyRef} defaultValue="">
+                <option value="">UNKNOWN</option>
+                <option value="LOW">LOW</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="HIGH">HIGH</option>
+              </select>
+            </div>
+          </div>
+          <div className="row2">
+            <div>
+              <label htmlFor="profInCost">입력 비용 ($/1M, 비우면 미상)</label>
+              <input id="profInCost" ref={profInCostRef} type="number" step="0.01" inputMode="decimal" />
+            </div>
+            <div>
+              <label htmlFor="profOutCost">출력 비용 ($/1M, 비우면 미상)</label>
+              <input id="profOutCost" ref={profOutCostRef} type="number" step="0.01" inputMode="decimal" />
+            </div>
+          </div>
+          <div className="row2">
+            <div>
+              <label htmlFor="profCtx">Context window</label>
+              <input id="profCtx" ref={profCtxRef} type="number" inputMode="numeric" />
+            </div>
+            <div>
+              <label htmlFor="profMaxOut">Max output tokens</label>
+              <input id="profMaxOut" ref={profMaxOutRef} type="number" inputMode="numeric" />
+            </div>
+          </div>
+          <label htmlFor="profCaps">Capabilities (콤마: code, reasoning, json_mode, tool_calling)</label>
+          <input id="profCaps" ref={profCapsRef} autoComplete="off" />
+          <label className="check">
+            <input id="profTool" ref={profToolRef} type="checkbox" /> tool calling 지원
+          </label>
+          <label className="check">
+            <input id="profJson" ref={profJsonRef} type="checkbox" /> JSON schema 지원
+          </label>
+          <label className="check">
+            <input id="profStream" ref={profStreamRef} type="checkbox" /> streaming 지원
+          </label>
+          <label className="check">
+            <input id="profLocal" ref={profLocalRef} type="checkbox" /> local only
+          </label>
+          <button id="btnProfSave" className="btn primary" disabled={profSaving} onClick={saveProfile}>
+            Profile 추가
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
