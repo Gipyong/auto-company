@@ -16,7 +16,7 @@ services:
       retries: 5
 
   web:
-    build: .
+    build: ./backend
     ports:
       - "8080:8080"
     environment:
@@ -28,6 +28,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  front:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - web
     restart: unless-stopped
 
 volumes:
