@@ -1,4 +1,3 @@
-/* AutoCompany CEO 콘솔 — 모바일 우선 반응형 스타일 */
 :root {
   --bg: #f4f5f7;
   --card: #ffffff;
@@ -22,7 +21,6 @@ body {
   line-height: 1.5;
 }
 
-/* ===== 상단 바 ===== */
 .topbar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -42,7 +40,6 @@ body {
 }
 .ctx-chip.on { color: var(--accent); }
 
-/* ===== 탭 ===== */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   display: flex;
@@ -59,7 +56,6 @@ body {
 }
 .tab.active { color: var(--accent); border-top-color: var(--accent); }
 
-/* ===== 본문 ===== */
 main { max-width: 1100px; margin: 0 auto; padding: 12px 12px 88px; }
 .tabpage { display: none; }
 .tabpage.active { display: block; }
@@ -79,7 +75,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 12px 12px 88px; }
 label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 12px 0 4px; }
 input, select, textarea {
   width: 100%;
-  font-size: 16px; /* iOS 자동 확대 방지 */
+  font-size: 16px;
   font-family: inherit;
   color: var(--text);
   background: #fff;
@@ -92,7 +88,6 @@ textarea { resize: vertical; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text); margin: 10px 0 0; }
 .check input { width: auto; }
 
-/* ===== 버튼 ===== */
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   min-height: 44px; padding: 10px 16px;
@@ -112,7 +107,6 @@ textarea { resize: vertical; }
 .row.between .btn { flex: 0 0 auto; min-width: 0; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-/* ===== 목록/카드 ===== */
 .list { margin-top: 12px; }
 .item {
   background: var(--card);
@@ -128,7 +122,6 @@ textarea { resize: vertical; }
 .item .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .item .actions .btn { flex: 0 0 auto; min-width: 0; }
 
-/* ===== 배지/칩 ===== */
 .badge {
   display: inline-block; vertical-align: middle;
   font-size: 11px; font-weight: 700; line-height: 1;
@@ -142,7 +135,6 @@ textarea { resize: vertical; }
 .badge.red { background: #fee2e2; color: var(--err); }
 .badge.hot { background: var(--err); color: #fff; }
 
-/* 세션 큐 강조 + 탭 배지 (설계 §17: 수신함 상단 강조) */
 .item.hot { border-color: #fca5a5; background: #fff5f5; }
 .item.dim { opacity: 0.75; }
 .tab-badge {
@@ -161,7 +153,6 @@ textarea { resize: vertical; }
 }
 .chip.add { background: #fff; color: var(--accent); border-color: #c7d2fe; }
 
-/* ===== 상태 박스 ===== */
 .status { font-size: 13px; color: var(--muted); margin-top: 10px; white-space: pre-wrap; }
 .status.ok { color: var(--ok); }
 .status.err { color: var(--err); }
@@ -176,7 +167,6 @@ textarea { resize: vertical; }
 .stat .v { font-size: 18px; font-weight: 800; }
 .stat .k { font-size: 12px; color: var(--muted); }
 
-/* ===== 토스트 ===== */
 .toast {
   position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom));
   transform: translateX(-50%) translateY(8px);
@@ -193,7 +183,6 @@ textarea { resize: vertical; }
 .toast.ok { background: #14532d; }
 .toast.err { background: #7f1d1d; }
 
-/* ===== 데스크톱 ===== */
 @media (min-width: 900px) {
   .tabbar {
     position: sticky; top: 57px; bottom: auto;

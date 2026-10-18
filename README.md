@@ -1,18 +1,19 @@
 # 🤖 AutoCompany (AI 가상 회사 시스템)
 
-**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.6.1)
+**현재 구현된 내용만 기술** (설계: `docs/DESIGN.md` v1.7)
 
 ## 구현 상태
 
 ### ✅ 구현 완료
-- **설계 문서**: `docs/DESIGN.md` (v1.6.1, Section 0~30)
-- **Java Spring Boot 백엔드**: `backend/` (Entity, Repository, Service, Controller, Config)
-- **테스트 코드**: `backend/src/test/`
+- **설계 문서**: `docs/DESIGN.md` (v1.7, Section 0~30)
+- **Java Spring Boot 백엔드**: `backend/` (Entity, Repository, Service, Controller, Config — JSON API 전용)
+- **SPA 콘솔**: `frontend/` (React + TypeScript + Vite, nginx `front` 컨테이너가 정적 서빙 + `/api` 프록시)
+- **테스트 코드**: `backend/src/test/`, `frontend/src/*.test.ts` (Vitest)
 - **QEMU 환경**: `qemu-test/` (`arm64.qcow2` init 스냅샷, Java 21, Ubuntu 26.04 ARM64)
-- **Docker**: `Dockerfile` 기반 (네트워크 허용 시 사용 가능)
+- **Docker**: 서비스별 멀티 스테이지 빌드 (`backend/Dockerfile` Maven→JRE, `frontend/Dockerfile` node→nginx)
 
 ### 🔧 현재 기능
-- 웹 콘솔 (`http://localhost:8080` — 브라우저에서 직원·직급·모델·업무를 직접 조작, 모바일 반응형)
+- 웹 콘솔 (SPA — `http://localhost:3000`, nginx가 `/api`를 web(8080)으로 프록시, 모바일 반응형)
 - 기본 회사 템플릿 import (`POST /api/v1/organizations/template/import` — 5단계 직급 L1~L5 + 기본 8인 조직 직원 생성, 이미 직급/직원이 있으면 409)
 - 직원 채용 (`POST /api/v1/employees`)
 - 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
@@ -30,6 +31,7 @@
 - 사용자 개설 세션·취소·동결 경로 (REQ-005 — 사용자 개설 진화 세션 `POST /api/v1/projects/{id}/clarification-sessions`(변경 원문 `changeNote`+첨부, `session_number` 승계+`parent_session_id` 연결, 활성 세션 중복 409), 세션 취소 `POST /api/v1/clarification-sessions/{id}/cancel`(open|waiting_client만, Audit 기록, frozen 불가), 동결 확장: 사용자 개설 세션 질문 0개 즉시 동결(검토 체인은 기록 승인만 수행, `frozen_by` 기록), `clientDirective=true`로 waiting_client에서 "이 정도면 진행" 동결(미답 질문은 가정으로 기록). 웹 콘솔: 새 세션 개설 폼·세션 취소 버튼·"이 정도면 진행" 동결 버튼)
 - 외부 고객 중계 (ORG-003 — Client 명부 `POST /api/v1/clients`(organizationId·displayName 필수)·`GET /clients?organizationId=`·`GET/PATCH /clients/{id}`(archived 전환, 기존 연결 기록 보존·신규 중계 연결 409), `Project.clientId`·`ClarificationSession.clientId` 연결(세션 생성 API `clientId` 지정 시 프로젝트 고객 override, 미지정 시 상속), 중계 세션 개설·동결 감사 로그("외부 고객 {이름} 중계 기록, 원문 보존"), 동결 기록 고객 원천 항목 source `client_relayed`+근거 "외부 고객 {이름} 중계 — ". 웹 콘솔: 외부 고객 카드(등록·목록·아카이브)·프로젝트/골/진화 세션 고객 선택·중계 배지)
 - 직원 커스텀 지시 (EMP-001 — `customInstructions` 필드(V7 `employees.custom_instructions` TEXT), 직원 생성 `POST /employees`·부분 갱신 `PATCH /employees/{id}`(`{name?, customInstructions?}` — null 유지·빈 문자열 지우기, 최대 4000자 초과 400 §26), §8.2 (3) 계층 조립 `EmployeeService.buildAgentContext`(직무 원칙+사용자 개별 지시+안전 정책 우선 문구; 후속 AgentRun 컨텍스트 소비 대상). 웹 콘솔: 직원 상세에서 지시 편집·저장)
+- 콘솔 SPA 분리 (WEB-002 — 콘솔을 `frontend/`(React+TS+Vite)로 이전, `front` 컨테이너(nginx:1.27)가 `/` 정적 서빙(SPA fallback)+`/api`→`web:8080` 프록시, 백엔드 정적 콘솔 제거(`/` 404 — `BackendNoStaticConsoleTest`), Dockerfile 서비스 디렉터리별 배치(루트는 `docker-compose.yml`만), 프론트 단위 테스트 Vitest `npm test`)
 - 토론 (`POST /api/v1/messages`)
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합
@@ -41,19 +43,23 @@
 # 1. 환경 변수 준비
 cp .env.example .env
 
-# 2. Docker Compose (앱 + PostgreSQL)
+# 2. Docker Compose (front + web + PostgreSQL)
 docker compose up --build -d
 docker compose ps
 
-# 3. 브라우저에서 웹 콘솔 접속
-open http://localhost:8080
+# 3. 브라우저에서 웹 콘솔 접속 (SPA — front 컨테이너, 3000)
+open http://localhost:3000
 #  → '시작' 탭에서 새 ID 생성 → 저장 & 연결 → 기본 회사 템플릿 가져오기
 #  → 직원/직급/모델/업무 탭에서 직접 조작 (모바일 브라우저도 동일 주소)
+#  → API 직접 호출은 백엔드(8080) 그대로 사용 가능: http://localhost:8080/api/v1/...
 
 # 4. QEMU VM에서 Spring Boot 테스트
 ssh -p 2222 ubuntu@localhost
 cd ~/autocompany/backend
 mvn compile test -B
+
+# 4-1. (선택) 프론트 단위 테스트 (VM Docker node 이미지 또는 Node 20 환경)
+cd ../frontend && npm test
 
 # 5. (선택) API로 직접 직원 채용
 curl -X POST http://localhost:8080/api/v1/employees \
@@ -65,19 +71,18 @@ curl -X POST http://localhost:8080/api/v1/employees \
 - `docs/DESIGN.md`는 항상 최신 상태 유지 필요
 - `README.md`는 현재 구현 내용만 작성 (미구현 기능 포함 금지)
 - QEMU VM (`arm64.qcow2`)는 `init` 스냅샷 기반 (이전 테스트 영향 제거 가능)
-- Docker 네트워크는 현재 제한됨 (이미지 pull 불가, 컨테이너 실행 가능)
+- VM/Docker 네트워크는 사용 가능 확인됨 (registry.npmjs.org 도달, 2026-10 실측). 폐쇄망에서는 사전 이미지 pull·npm 캐시 필요
 
 ### 📁 파일 구조
 ```
-docs/DESIGN.md          # 설계 문서 (항상 최신)
-AGENTS.md                # 테스트/개발 프로토콜
-README.md                # 현재 구현 기준 안내
-Dockerfile               # 멀티 스테이지 빌드 (Maven → JRE)
-docker-compose.yml       # 앱 + PostgreSQL (포트 8080)
-.env.example             # 환경 변수 예시
-backend/                 # Java Spring Boot
-local_runner/            # Python AI 워커
-qemu-test/               # QEMU VM 환경
+docs/DESIGN.md            # 설계 문서 (항상 최신)
+AGENTS.md                 # 테스트/개발 프로토콜
+README.md                 # 현재 구현 기준 안내
+docker-compose.yml        # front(3000) + web(8080) + PostgreSQL(5432)
+.env.example              # 환경 변수 예시
+backend/                  # Java Spring Boot (JSON API) + backend/Dockerfile
+frontend/                 # React+TS+Vite SPA + nginx.conf + frontend/Dockerfile
+qemu-test/                # QEMU VM 환경
 ```
 
 ### 📚 참고

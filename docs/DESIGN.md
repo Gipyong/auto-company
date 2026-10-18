@@ -1,11 +1,12 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.6.1 (사용자 다중 포지션·다중 모달 접수·직원 커스텀 지시 + 재검토 정정)  
+> 버전: 1.7 (웹 콘솔 SPA 분리 — React+TS+Vite `frontend/`+nginx `front` 컨테이너, 백엔드 JSON API 전용; v1.6.1 기반)  
 > 상태: 구현 기준 설계 — Java 21 / Spring Boot 3.x(안정 버전) + Maven 백엔드 기준  
 > 목표: 로컬 우선으로 실행 가능하고, 다른 PC·서버로 재현/배포 가능한 AI 기반 소프트웨어 개발 조직 플랫폼  
 > 위치 핵심: 사용자는 고정 포지션이 아니다 — **운영자**(조직 구성·통제), **발주 고객**(요구 제출·확정), **기술 조언자·전문가**(디자이너·TO 등 직접 지시), **외부 고객 중계자**를 오간다. 시스템은 사용자를 전문가·비전문가로 단정하지 않고 전문성 신호에 따라 조응한다(§0, §28). 요구사항 이외의 기술 결정은 기본적으로 AI 직원 내부 협의가 처리한다(§28, §29).
 
 변경 이력:
+- v1.7: 웹 콘솔을 SPA(React+TypeScript+Vite, `frontend/`)로 분리; nginx `front` 컨테이너가 정적 서빙+`/api` 프록시(콘솔 `http://localhost:3000`); 백엔드는 JSON API 전용(정적 콘솔 제거, WEB-002). Dockerfile을 서비스 디렉터리별 배치(`backend/Dockerfile`·`frontend/Dockerfile`), 루트는 `docker-compose.yml`만.
 - v1.6.1: 전체 재검토 정정 — 세션 취소 규칙(고객 포지션, 파이프라인 개설 포함), 파이프라인 자동 세션 상한 범위 명시, 수신함 엔드포인트 `GET /users/{userId}/pending-sessions` 정리, 세션 `client_id`=Project 상속 규칙, User.role↔포지션 구분, 포인터·공백·문법 정정.
 - v1.6: 사용자 다중 포지션(운영자·발주 고객·기술 조언자·전문가·중계자), 외부 고객(Client) 중계, **사용자 개설 요구사항 세션**(§28.6), 골 다중 모달 접수(파일·이미지 첨부 §28.7), 직원 커스텀 지시(custom_instructions) 설계. 형식 오류 정정.
 - v1.5: 전체 압축 정리. 규범적 내용(엔티티·API·프로토콜·결정)은 유지하고 중복 서술을 제거했다.
@@ -48,9 +49,9 @@
 
 ## 2. 배포 모델
 
-Docker Compose 기반 로컬 설치. 구성 대상: `web` UI+API(+초기 worker 동일 프로세스), `postgres`, (안정화 후) `worker` 분리, (선택) `redis`, `workspace-runner`, 로컬 모델 서버. 코드 실행 권한을 가진 workspace runner는 API와 동일 권한/컨테이너에 넣지 않는다.
+Docker Compose 기반 로컬 설치. 구성 대상: `front` SPA 콘솔(nginx, 호스트 3000→80; `/api`를 `web`으로 프록시), `web` API(+초기 worker 동일 프로세스), `postgres`, (안정화 후) `worker` 분리, (선택) `redis`, `workspace-runner`, 로컬 모델 서버. 코드 실행 권한을 가진 workspace runner는 API와 동일 권한/컨테이너에 넣지 않는다. Dockerfile은 서비스 디렉터리에 둔다(`backend/Dockerfile`, `frontend/Dockerfile`) — 루트는 `docker-compose.yml`+`.env.example`만.
 
-설치 흐름: clone → `.env` 생성 → `docker compose up -d` → 콘솔 접속 → 최초 관리자 생성 → 모델 제공자 설정/로컬 모델 선택 → Git 저장소 등록 → 기본 회사 템플릿 선택 → preflight 사전 점검 → 첫 골 제출.
+설치 흐름: clone → `.env` 생성 → `docker compose up -d` → 콘솔 접속(`http://localhost:3000`; API 직접은 `:8080`) → 최초 관리자 생성 → 모델 제공자 설정/로컬 모델 선택 → Git 저장소 등록 → 기본 회사 템플릿 선택 → preflight 사전 점검 → 첫 골 제출.
 
 - API 키는 UI에 평문 재표시 금지. `.env`/비밀 파일은 커밋 금지.
 
@@ -484,8 +485,9 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
-### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)** / **직원 지시 편집(EMP-001: 직원 상세 custom_instructions 편집·저장 → `PATCH /employees/{id}`)**. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+### Web Console(SPA, 구현됨)
+
+`frontend/`(React+TypeScript+Vite) SPA를 `front` 컨테이너(nginx)가 `/`에서 정적 서빙(SPA fallback: `try_files … /index.html`)하고 `/api`를 `web:8080`으로 프록시한다(동일 출처 — CORS 불필요). 백엔드는 JSON API 전용 — 기존 정적 콘솔(`backend/src/main/resources/static/`)은 제거됨(WEB-002). 빌드는 Docker 멀티스테이지(`node:20-alpine` 빌드 → `nginx:alpine` 런타임), `package-lock.json` 커밋+`npm ci`로 재현. 개발 시에는 `vite dev` 서버 프록시(`/api`→`localhost:8080`)(`frontend/vite.config.ts`). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)** / **직원 지시 편집(EMP-001: 직원 상세 custom_instructions 편집·저장 → `PATCH /employees/{id}`)**. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 
@@ -496,17 +498,24 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 auto-company/
   backend/
     pom.xml                       # Maven 단일 모듈
+    Dockerfile                    # maven build → JRE runtime (compose context: ./backend)
     src/main/java/com/autocompany/
       controller/ service/ entity/ repository/ model/   # 계약·값 타입
-    src/main/resources/static/    # 초기 콘솔 (§17)
+    src/main/resources/
+      application.yml · db/migration/   # Flyway (V1~)
     src/test/java/
+  frontend/                       # SPA 콘솔 (§17, WEB-002)
+    package.json · package-lock.json · vite.config.ts · tsconfig.json
+    Dockerfile                    # node:20-alpine build → nginx:alpine (compose context: ./frontend)
+    nginx.conf                    # /: index.html fallback, /api/: proxy → web:8080
+    src/                          # React+TS (api·ctx·tabs·components)
   docker-compose.yml · .env.example
   docs/DESIGN.md
   qemu-test/                      # QEMU VM 자동 검증
   README.md · AGENTS.md
 ```
 
-확장(안정화 이후): `apps/web`(Next.js), 모듈 분리(domain/application/infrastructure/api), 별도 worker 진입점, workspace runner 클라이언트. 초기에는 논리 모듈(§3)이 패키지 경계. Python은 필수 아님; 선택적 worker는 별도 디렉터·이미지+Java API 계약 통신.
+확장(안정화 이후): 고객 대시보드(Next.js, UI-001), 모듈 분리(domain/application/infrastructure/api), 별도 worker 진입점, workspace runner 클라이언트. 초기에는 논리 모듈(§3)이 패키지 경계. Python은 필수 아님; 선택적 worker는 별도 디렉터·이미지+Java API 계약 통신.
 
 ---
 
@@ -519,6 +528,7 @@ auto-company/
 - **Phase 3 — Task workflow·Agent Runtime**: 상태 머신, lease·retry·pause/resume, context builder, structured output, tool dispatch, 횟수·시간·비용 한도, quota 대기. 기준: kill 후 복구, 무한 루프 없음, 중복 완료 없음.
 - **Phase 3A — 명확화 파이프라인(REQ-001~005)**: §5.23~26 엔티티·전이, 골 접수 API(텍스트+첨부 §28.7)+협의 개설(Mock), 질문 구성기(개별 체크박스·기타·한도), 검토 체인+동결 불변성, waiting_client 큐+접속 표시, **사용자 개설 세션·취소(REQ-005), Client 중계(§5.26)**. 기준: 질문이 체인 통과 후 표시 / 오프라인 큐 유지 / 동결 후 수정 차단+감사 / 새 세션 진화(파이프라인·사용자 양쪽).
 - **Phase 3B — 자율 오케스트레이션(ORCH-001~002)**: 동결 기록→분해(Mock), task_types 기반 자동 배정, 재계획·에스컬레이션. 기준: 골만으로 분해·배정 진행, 부족 시 새 세션, 모든 결정 근거 기록.
+- **Phase 3C — 콘솔 SPA 분리(WEB-002)**: React+TS+Vite `frontend/`(콘솔 포팅), nginx `front` 컨테이너(정적+`/api` 프록시) 표준 진입점, 백엔드 정적 콘솔 제거, 서비스별 Dockerfile(`backend/`·`frontend/`). 기준: `docker compose up` 후 `:3000` 콘솔 동작·`:8080` API 유지, VM·Docker E2E 통과.
 - **Phase 4 — Workspace·Git**: repository allowlist, branch/worktree, Docker provisioning, 한도, diff·test artifact, cleanup, PR 상태. 기준: 두 직원 독립 변경, 비밀 접근 없음, 정리+감사.
 - **Phase 5 — 품질 게이트·리뷰 루프**: command template, unit/lint/type/build, Review entity, 자기승인 방지, 재실행, merge policy. 기준: 테스트 실패는 승인 상태여도 merge 불가, SHA 변경 검증 무효, 수정 요청→Task 상태 연결.
 - **Phase 6 — 문서·질의응답**: docs tree, full-text, 참조 연결, freshness, 근거 링크+불확실성, 담당 workflow. 기준: 근거 반환, 부재 시 미확인 표시, 변경→문서 검토 Task.
@@ -629,13 +639,13 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 ## 24. MVP 인수 기준
 
-1. 문서대로 로컬 Compose 설치 성공. 2. 최초 관리자+기본 조직 템플릿 생성. 3. 직무·직급·모델 풀 독립 설정; 배정 직원이 있으면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골(텍스트+첨부)→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만; 사용자가 자발적으로 전문 요구를 제시한 경우 예외 — client_declared 수용).** 23. **첨부 접수: Artifact 보존+추출 근거 기록; 파싱 불가 유형은 원본 보존+텍스트 보강 요청(§28.7).** 24. **직원 custom_instructions가 AgentRun 컨텍스트에 포함(§8.2).** 25. **사용자 개설 세션→동결→새 RequirementSet 버전 승계; 동시 세션 2개 409(§28.6).** 26. **외부 고객 중계: Client 등록, 원문 보존+`client_relayed` 표시+감사(§5.26).**
+1. 문서대로 로컬 Compose 설치 성공. 2. 최초 관리자+기본 조직 템플릿 생성. 3. 직무·직급·모델 풀 독립 설정; 배정 직원이 있으면 삭제 거부. 4. provider 어댑터≥2(실제 1+mock) 동작. 5. provider 비용·usage·실패 기록. 6. 프로젝트→로컬 Git 연결. 7. **골 제출→자동 분해·배정**(§29; 수동도 임시 허용). 8. worker 재시작 후 Task 상태 보존. 9. 격리 workspace에서 실제 변경·테스트. 10. PR·리뷰 생성. 11. 자기승인 차단. 12. 실패 필수 테스트가 완료·merge 차단. 13. quota·예산 초과 대기/중단. 14. 문서·테스트→Task/commit 연결. 15. 주요 변경 audit log. 16. workspace 정리+실패 탐지. 17. API 키 노출 없음. 18. backup/restore 검증. 19. **고객 골(텍스트+첨부)→구조화 질문(개별 체크박스+기타) 전달; 고객 부재 시 큐 유지(§28).** 20. **답변 후 동결·불변 기록; 수정 409, 새 세션 진화.** 21. **동결 기록만으로 분해·배정 진행(Mock).** 22. **기술 질문이 고객에게 전달되지 않음(내부 Decision 만; 사용자가 자발적으로 전문 요구를 제시한 경우 예외 — client_declared 수용).** 23. **첨부 접수: Artifact 보존+추출 근거 기록; 파싱 불가 유형은 원본 보존+텍스트 보강 요청(§28.7).** 24. **직원 custom_instructions가 AgentRun 컨텍스트에 포함(§8.2).** 25. **사용자 개설 세션→동결→새 RequirementSet 버전 승계; 동시 세션 2개 409(§28.6).** 26. **외부 고객 중계: Client 등록, 원문 보존+`client_relayed` 표시+감사(§5.26).** 27. **웹 콘솔=SPA(`front`:3000, nginx) 분리 서빙; `/api`→`web` 프록시 동작, 백엔드 정적 콘솔 없음(WEB-002).**
 
 ---
 
 ## 25. 결정 사항 요약(규범)
 
-1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자는 다중 포지션**: 운영자(조직·직급·모델 풀·직원 개별 지시 구성 권한 — 이미 구현), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 제시한 기술·디자인 지시는 `client_declared` 제약 수용), 외부 고객 중계자. 전문성 고정 단정 금지 — 신호 기반 적응(§28.2); 기술 결정 기본은 내부 처리. 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전 — 파이프라인과 사용자 양쪽에서 새 세션 개설 가능(§28.6).** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.** 25. **골 입력은 텍스트+파일·이미지 첨부; 지원 불가·파싱 실패 유형은 원본 보존+텍스트 보강 요청, 첨부 근거는 요구 항목에 기록(§28.7).** 26. **직원 `custom_instructions`(사용자 작성 개별 지시, AGENTS.md류)는 모든 AgentRun 컨텍스트에 주입된다; 시스템 안전 정책이 우선(§8.2).** 27. **외부 고객은 자체 로그인 없이 운영자가 중계한다; 원문 보존·감사·`client_relayed` 표시(§5.26).**
+1. 모듈형 모놀리식 시작; 실제 병목 전 마이크로서비스 금지. 2. PostgreSQL=상태 원본; 큐·캐시는 유일 원본 금지. 3. AI 대화보다 Task/Workflow 상태 머신 우선. 4. provider 어댑터 분리; SDK 종속 금지. 5. 작업별 Docker workspace; Docker socket 노출 금지. 6. Git 브랜치+PR 기본 흐름. 7. 자기승인 금지+필수 테스트·독립 리뷰 게이트. 8. 모델 사용 범위=직급 풀(§5.9); 풀 내 선택은 모드·우선순위·예산 따름 — 직급별 가용 모델 배정은 사용자 설정, 업무 배정은 §29 정책. 9. 평가 근거 기반; 직급 자동 변경 금지(수동). 10. 기본 설치에서 배포·무제한 네트워크 비활성. 11. 모든 작업=최대 시도·시간·비용 한도. 12. 직원별 복수 한도 동시 설정 가능. 13. 동시 실행에서 한도 초과 호출 없음(reserve/settle 경쟁 테스트). 14. 한도 도달 유료 차단+대기/재개; fallback은 명시 허용만. 15. 문서 답변 근거 제시; 부족하면 "모른다". 16. Local-first+capability 명시; 가용 불가 OS/VM/GPU 척 금지. 17. 기본 템플릿=안전·작동 출발점; 실측 개선. 18. 직급·모델 풀은 사용자 구성; 직급 수 조절 가능. 19. **사용자는 다중 포지션**: 운영자(조직·직급·모델 풀·직원 개별 지시 구성 권한 — 이미 구현), 발주 고객(요구 제출·명확화 답변·인수), 기술 조언자·전문가(직접 제시한 기술·디자인 지시는 `client_declared` 제약 수용), 외부 고객 중계자. 전문성 고정 단정 금지 — 신호 기반 적응(§28.2); 기술 결정 기본은 내부 처리. 20. **질문=구조화(기능별 개별 체크박스·선택형)+기타 자유 텍스트; 세션당 상한.** 21. **질문 세션은 관리 단위(open→waiting_client→review→frozen); 고객 오프라인 큐 유지.** 22. **동결 기록 불변; 진화는 새 세션·새 버전 — 파이프라인과 사용자 양쪽에서 새 세션 개설 가능(§28.6).** 23. **자율 오케스트레이션은 동결 요구만 근거.** 24. **고객 자발적 전문 요구는 `client_declared` 제약으로 수용; 질문 면제·간략화, 바닥선 충돌 시 임의 진행 금지+제품 수준 후속 질문 확인.** 25. **골 입력은 텍스트+파일·이미지 첨부; 지원 불가·파싱 실패 유형은 원본 보존+텍스트 보강 요청, 첨부 근거는 요구 항목에 기록(§28.7).** 26. **직원 `custom_instructions`(사용자 작성 개별 지시, AGENTS.md류)는 모든 AgentRun 컨텍스트에 주입된다; 시스템 안전 정책이 우선(§8.2).** 27. **외부 고객은 자체 로그인 없이 운영자가 중계한다; 원문 보존·감사·`client_relayed` 표시(§5.26).** 28. **프론트엔드=React+TS+Vite SPA(`frontend/`)+nginx `front` 컨테이너(표준 진입점 `:3000`); 백엔드는 JSON API 전용(정적 콘솔 제거), Dockerfile은 서비스 디렉터리별 배치(WEB-002).**
 
 ---
 
@@ -657,6 +667,8 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 각 티켓: `acceptance_criteria`·의존·테스트 계획·담당·리뷰어 필수(AI 구현 동일 적용).
 
 **사용자·입력 확장(v1.6)**: 34. `ORG-003` Client 중계 고객(§5.26)+Project/세션 연결+중계 감사. 35. `EMP-001` 직원 커스텀 지시(`custom_instructions` 필드·CRUD·컨텍스트 주입). 36. `REQ-004` 다중 모달 골 접수(첨부 Artifact 저장·파서 등급·vision 조건·추출 근거). 37. `REQ-005` 사용자 개설 세션·취소 API(개설 취지 원문·동시 세션 409·진화 승계).
+
+**콘솔·구조(v1.7)**: 38. `WEB-002` 콘솔 SPA 분리(React+TS+Vite `frontend/` 포팅, nginx `front` 컨테이너+`/api` 프록시, 백엔드 정적 콘솔 제거, 서비스별 Dockerfile).
 
 사용량 제한 우선순위: (1) 실 usage 기록·정산 정확화 → (2) BudgetPolicy 조회+호출 전 원자적 예약 → (3) 비용·토큰·요청 기간 집계(rolling 경계 포함) → (4) `WAITING_FOR_QUOTA`·retry_after_at 저장+재개 조건만 scheduler 재시도 → (5) 경고·잔여 UI+grant. 테스트: 동시 예약 경쟁(잔여 초과), timeout 과금 불명, 월 경계·시간대, rolling 경계, fallback 자체 한도 초과.
 
