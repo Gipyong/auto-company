@@ -7,6 +7,7 @@ import com.autocompany.entity.ClarificationSession.SessionStatus;
 import com.autocompany.entity.DiscussionMessage;
 import com.autocompany.entity.Project;
 import com.autocompany.entity.User;
+import com.autocompany.repository.ArtifactRepository;
 import com.autocompany.repository.ClarificationQuestionRepository;
 import com.autocompany.repository.ClarificationSessionRepository;
 import com.autocompany.repository.DiscussionMessageRepository;
@@ -29,6 +30,7 @@ public class ClarificationQuestionServiceTest {
     private ClarificationSessionRepository sessionRepository;
     private DiscussionMessageRepository discussionMessageRepository;
     private ClarificationReviewChainService reviewChainService;
+    private ArtifactRepository artifactRepository;
     private ClarificationQuestionService service;
 
     private UUID sessionId;
@@ -43,8 +45,10 @@ public class ClarificationQuestionServiceTest {
         sessionRepository = mock(ClarificationSessionRepository.class);
         discussionMessageRepository = mock(DiscussionMessageRepository.class);
         reviewChainService = mock(ClarificationReviewChainService.class);
+        artifactRepository = mock(ArtifactRepository.class);
         service = new ClarificationQuestionService(questionRepository, sessionRepository,
-                discussionMessageRepository, reviewChainService, new ClarificationExpertSignalDetector());
+                discussionMessageRepository, reviewChainService, new ClarificationExpertSignalDetector(),
+                artifactRepository);
 
         sessionId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -164,6 +168,48 @@ public class ClarificationQuestionServiceTest {
         List<ClarificationQuestion> result = service.getQuestions(sessionId);
 
         assertEquals(1, result.size());
+    }
+
+    // ==================== REQ-004 첨부 기능(§28.7) ====================
+
+    @Test
+    void composeAddsReinforceFollowUpForUnsupportedAttachments() {
+        // §28.7-3: 파싱 불가 첨부는 상한과 별개로 보강 후속 요구 1건 항상 기록
+        session.setAttachments(java.util.List.of(new ClarificationSession.AttachmentRef(
+                UUID.randomUUID(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "요구정리.xlsx", 100L, "UNSUPPORTED")));
+        when(reviewChainService.runReviewChain(sessionId)).thenReturn(true);
+
+        List<ClarificationQuestion> result = service.composeQuestions(sessionId);
+
+        assertEquals(6, result.size()); // 5(기본 상한) + 보강 후속 1
+        ClarificationQuestion reinforce = result.get(5);
+        assertEquals(QuestionType.FREE_TEXT, reinforce.getQuestionType());
+        assertTrue(reinforce.getPrompt().contains("보강"));
+    }
+
+    @Test
+    void composeExemptQuestionsUsingParsedAttachmentSignals() {
+        // §28.7-4: 첨부 텍스트가 골 텍스트 확정이 아니어도 신호 출처에 합류 — FEATURES 역제외가 골 단독 상태에서도 동작
+        session.setGoalText("블로그 사이트 만들어줘");
+        UUID artifactId = UUID.randomUUID();
+        session.setAttachments(java.util.List.of(new ClarificationSession.AttachmentRef(
+                artifactId, "text/markdown", "기능목록.md", 30L, "PARSED")));
+        com.autocompany.entity.Artifact artifact = com.autocompany.entity.Artifact.builder()
+                .id(artifactId)
+                .artifactType(com.autocompany.entity.Artifact.ArtifactType.DOCUMENT)
+                .parseStatus(com.autocompany.entity.Artifact.ParseStatus.PARSED)
+                .parsedText("회원가입 및 로그인 기능, 댓글 교류, 내용 검색")
+                .build();
+        when(artifactRepository.findAllById(List.of(artifactId))).thenReturn(List.of(artifact));
+        when(reviewChainService.runReviewChain(sessionId)).thenReturn(true);
+
+        List<ClarificationQuestion> result = service.composeQuestions(sessionId);
+
+        assertEquals(5, result.size()); // 6 템플릿 - 멀티선택 1면제(첨부 기능 목록)
+        assertTrue(result.stream().noneMatch(q -> q.getQuestionType() == QuestionType.MULTI_CHOICE));
+        verify(discussionMessageRepository, atLeastOnce()).save(argThat(msg ->
+                msg.getContent().contains("첨부 기능목록.md"))); // 근거 라벨(§28.7-4)
     }
 
     // ==================== 답변 ====================

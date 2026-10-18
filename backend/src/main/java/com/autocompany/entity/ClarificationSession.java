@@ -5,6 +5,8 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -21,8 +23,8 @@ public class ClarificationSession {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    // §5.23 불변 감사용 원문 — 초기 골 또는 세션 개설 취지/변경 요청 원문
-    @Column(name = "goal_text", columnDefinition = "TEXT", nullable = false, updatable = false)
+    // §5.23 불변 감사용 원문 — 초기 골 또는 세션 개설 취지/변경 요청 원문 (§28.7(1) 첨부 단독 접수 시 null 허용)
+    @Column(name = "goal_text", columnDefinition = "TEXT", nullable = true, updatable = false)
     private String goalText;
 
     @Column(name = "session_number", nullable = false)
@@ -43,11 +45,16 @@ public class ClarificationSession {
     @Column(name = "client_id")
     private UUID clientId;
 
-    // §28.7 첨부 참조 목록 (REQ-004에서 데이터 구성)
+    // §28.7 첨부 참조 목록(REQ-004) — Artifact 저장 후 파싱 결과까지 반복해 기록
     @JdbcTypeCode(SqlTypes.JSON)
     @Builder.Default
     @Column(name = "attachments", columnDefinition = "jsonb")
-    private String attachments = "[]";
+    private List<AttachmentRef> attachments = new ArrayList<>();
+
+    /** §28.7-2 첨부 참조 스냅샷 */
+    public record AttachmentRef(UUID artifactId, String mediaType, String filename,
+                                long sizeBytes, String parseStatus) {
+    }
 
     @Column(name = "closed_at")
     private LocalDateTime closedAt;

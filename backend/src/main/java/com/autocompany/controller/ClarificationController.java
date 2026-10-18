@@ -41,7 +41,14 @@ public class ClarificationController {
     public ResponseEntity<SessionResponse> submitGoal(
             @PathVariable UUID projectId,
             @RequestBody GoalRequest request) {
-        ClarificationSession session = sessionService.openPipelineSession(projectId, request.userId(), request.goalText());
+        ClarificationSession session = sessionService.openPipelineSession(
+                projectId,
+                request.userId(),
+                request.goalText(),
+                request.attachments() == null ? List.of() : request.attachments().stream()
+                        .map(a -> new ClarificationSessionService.AttachmentInput(
+                                a.filename(), a.mediaType(), a.sizeBytes(), a.contentBase64(), a.contentUri()))
+                        .toList());
         return ResponseEntity.status(201).body(SessionResponse.from(session));
     }
 
@@ -143,7 +150,12 @@ public class ClarificationController {
 
     // ==================== DTO ====================
 
-    public record GoalRequest(UUID userId, String goalText) {
+    public record GoalRequest(UUID userId, String goalText, List<AttachmentItem> attachments) {
+    }
+
+    /** §28.7(1) 첨부 입력 — MVP는 contentBase64만 지원(§28.7-6) */
+    public record AttachmentItem(String filename, String mediaType, Long sizeBytes,
+                                 String contentBase64, String contentUri) {
     }
 
     public record FreezeRequest(UUID userId) {
@@ -249,6 +261,7 @@ public class ClarificationController {
             String clientExtraNote,
             int maxQuestions,
             UUID parentSessionId,
+            List<AttachmentView> attachments,
             LocalDateTime createdAt) {
 
         public static SessionResponse from(ClarificationSession s) {
@@ -264,7 +277,19 @@ public class ClarificationController {
                     s.getClientExtraNote(),
                     s.getMaxQuestions(),
                     s.getParentSessionId(),
+                    s.getAttachments() == null ? List.of() : s.getAttachments().stream()
+                            .map(AttachmentView::from)
+                            .toList(),
                     s.getCreatedAt());
+        }
+    }
+
+    /** §28.7-2 세션의 첨부 참조 스냅샷(파싱 상태 포함) */
+    public record AttachmentView(UUID artifactId, String mediaType, String filename,
+                                 long sizeBytes, String parseStatus) {
+        public static AttachmentView from(ClarificationSession.AttachmentRef ref) {
+            return new AttachmentView(ref.artifactId(), ref.mediaType(), ref.filename(),
+                    ref.sizeBytes(), ref.parseStatus());
         }
     }
 }
