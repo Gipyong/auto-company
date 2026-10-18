@@ -15,7 +15,11 @@
 ### 🔧 현재 기능
 - 웹 콘솔 (SPA — `http://localhost:3000`, nginx가 `/api`를 web(8080)으로 프록시, 모바일 반응형): 좌측 사이드바(지시/직원/직급/모델 — 모바일은 햄버거 드로어), 첫 접속 시 고정 단일 조직·사용자로 `POST /api/v1/organizations/template/import` 자동 호출(409는 이미 구성됨으로 간주), 대기 세션 배지
 - 기본 회사 템플릿 import (`POST /api/v1/organizations/template/import` — 5단계 직급 L1~L5 + 기본 8인 조직 직원 생성, 이미 직급/직원이 있으면 409)
-- 팀(부서) 관리 (TEAM-001 — `POST /api/v1/teams`(organizationId·name 필수, 조직 내 중복명 409)·`GET /teams?organizationId=`·`GET /teams/{id}`·`PATCH /teams/{id}`(부분 갱신: 이름·설명·status; 아카이브는 소속 직원 있으면 409, 아카이브 팀 배정 409·미존재 팀 404), DB V8 `teams` 테이블 + `employees.team_id`. 웹 콘솔: 직원 탭 팀 칩 필터·팀 만들기/이름 변경/아카이브·직원 상세 팀 배정)
+- **팀(부서) 운영 모델 (v1.9 — §5.3·§13·§15·§29):**
+  - 팀 CRUD (`POST/GET/PATCH /api/v1/teams`), 아카이브 가드(소속 직원 0명 시만)
+  - **팀 리드 지정/해제** (`PATCH /teams/{id}/lead` — 팀원만 가능, 미지정 시 최고 직급 임시 대표)
+  - **팀 단위 피드백** (`POST/GET /teams/{id}/feedback` — 팀장이 상대 팀에 제출, 대상은 팀 전체, 읽기 전용 조회, 개인 평가로 분해 금지)
+  - **팀 인지 배정** (오케스트레이션 분해 시 같은 팀 내 우선 가중, 컨텍스트 재사용·교차 조정 비용 절감)
 - 직원 채용 (`POST /api/v1/employees` — 선택 `teamId`(active 팀만), `customInstructions`)
 - 직급(JobGrade) 관리 (`GET/POST/PATCH/DELETE /api/v1/grades`, `GET/PUT /api/v1/grades/{id}/models`)
 - 직원 직급 배정 (`PATCH /api/v1/employees/{id}/grade`)
@@ -55,7 +59,7 @@ docker compose ps
 open http://localhost:3000
 #  → 첫 접속 시 기본 조직·템플릿 자동 구성 (별도 연결 절차 없음)
 #  → 지시 탭: 프롬프트 입력 → [묻기] 또는 [지시하기] → 프로젝트·세션 진행 → [동결] → [분해·배정 실행] → 업무 트리·배정 확인
-#  → 직원 탭: 팀 만들기·배치, 직급/모델 탭에서 조직 구성 (모바일 브라우저도 동일 주소)
+#  → 직원 탭: 팀 만들기·배치, 팀 리드 지정, 팀 피드백 조회, 직급/모델 탭에서 조직 구성 (모바일 브라우저도 동일 주소)
 #  → API 직접 호출은 백엔드(8080) 그대로 사용 가능: http://localhost:8080/api/v1/...
 
 # 4. QEMU VM에서 Spring Boot 테스트

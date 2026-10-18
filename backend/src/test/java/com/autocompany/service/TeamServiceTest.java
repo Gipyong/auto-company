@@ -4,6 +4,7 @@ import com.autocompany.entity.Employee;
 import com.autocompany.entity.Team;
 import com.autocompany.entity.Team.TeamStatus;
 import com.autocompany.repository.EmployeeRepository;
+import com.autocompany.repository.JobGradeRepository;
 import com.autocompany.repository.TeamRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,13 +27,15 @@ public class TeamServiceTest {
 
     private TeamRepository teamRepository;
     private EmployeeRepository employeeRepository;
+    private JobGradeRepository jobGradeRepository;
     private TeamService service;
 
     @BeforeEach
     void setUp() {
         teamRepository = mock(TeamRepository.class);
         employeeRepository = mock(EmployeeRepository.class);
-        service = new TeamService(teamRepository, employeeRepository);
+        jobGradeRepository = mock(JobGradeRepository.class);
+        service = new TeamService(teamRepository, employeeRepository, jobGradeRepository);
     }
 
     private Team team(UUID id, TeamStatus status) {
@@ -160,7 +163,7 @@ public class TeamServiceTest {
         UUID id = UUID.randomUUID();
         Team existing = team(id, TeamStatus.ACTIVE);
         when(teamRepository.findById(id)).thenReturn(Optional.of(existing));
-        when(employeeRepository.findByTeamId(id)).thenReturn(List.of(new Employee()));
+        when(employeeRepository.findByTeamId(id)).thenReturn(List.of(Employee.builder().id(UUID.randomUUID()).name("테스트").role(com.autocompany.entity.enums.Role.DEVELOPER).build()));
 
         // §5.3 — 소속 직원이 있으면 아카이브 409(직급 삭제와 동일 원칙)
         assertThrows(IllegalStateException.class, () -> service.updateTeam(id, null, null, "archived"));

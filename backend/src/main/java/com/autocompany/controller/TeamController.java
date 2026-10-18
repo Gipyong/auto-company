@@ -45,6 +45,11 @@ public class TeamController {
         return ResponseEntity.ok(teamService.updateTeam(id, request.name, request.description, request.status));
     }
 
+    @PatchMapping("/teams/{id}/lead")
+    public ResponseEntity<Team> setTeamLead(@PathVariable UUID id, @RequestBody TeamLeadRequest request) {
+        return ResponseEntity.ok(teamService.setTeamLead(id, request.teamLeadEmployeeId()));
+    }
+
     // ==================== 예외 매핑 ====================
 
     @ExceptionHandler(IllegalStateException.class)
@@ -68,5 +73,8 @@ public class TeamController {
     }
 
     public record TeamPatchRequest(String name, String description, String status) {
+    }
+
+    public record TeamLeadRequest(UUID teamLeadEmployeeId) {
     }
 }

@@ -15,4 +15,10 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     
     @EntityGraph(attributePaths = {"assignee", "project", "project.user"})
     Optional<Task> findById(UUID id);
+
+    @EntityGraph(attributePaths = {"assignee", "project", "project.user"})
+    List<Task> findByParentTaskId(UUID parentTaskId);
+
+    @EntityGraph(attributePaths = {"assignee", "project", "project.user"})
+    List<Task> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 }
