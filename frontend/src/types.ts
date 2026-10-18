@@ -60,7 +60,11 @@ export interface Profile {
   inputCostPerMillion?: number | null;
   outputCostPerMillion?: number | null;
   contextWindow?: number | null;
+  maxOutputTokens?: number | null;
   capabilities?: string[] | null;
+  supportsToolCalling?: boolean;
+  supportsJsonSchema?: boolean;
+  supportsStreaming?: boolean;
   localOnly?: boolean;
   enabled: boolean;
 }
