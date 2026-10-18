@@ -22,6 +22,7 @@
 - 업무 할당 (`POST /api/v1/tasks`)
 - 직급별 모델 풀 기반 Cost-Performance Router (PRIORITY / TASK_BASED / BUDGET_OPTIMIZED)
 - 피드백 평가 (`POST /api/v1/ratings` — 근거 참조 `evidenceRefs` 포함, 자동 승급 없음)
+- 요구 명확화 세션 기초 (REQ-001 — 골 접수 `POST /api/v1/projects/{id}/goal`, 파이프라인 세션 open 개설(PLANNER), 세션 조회 2종, 질문 수신함 `GET /users/{userId}/pending-sessions` /*연 - 질문 생성·답변·동결은 REQ-002/003에서 구현*)
 - 토론 (`POST /api/v1/messages`)
 - CEO Ask Anything (`POST /api/v1/ask` — RAG 기반, 구조 준비)
 - 문서 담당 직원 (`TaskType.DOCUMENTATION`) — 일반 직원 모델로 통합
