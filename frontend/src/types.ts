@@ -84,6 +84,8 @@ export interface TaskRow {
   attemptCount?: number | null;
   maxAttempts?: number | null;
   resultSummary?: string | null;
+  blockedReason?: string | null;
+  parentTaskId?: string | null;
 }
 
 export interface SessionAttachment {
@@ -171,4 +173,51 @@ export interface GoalAttachmentPayload {
   mediaType: string;
   sizeBytes: number;
   contentBase64: string;
+}
+
+export interface OrchestrationCycle {
+  id: string;
+  requirementSetId: string;
+  requirementSetVersion: number;
+  mode: string;
+  createdTaskCount: number;
+  blockedTaskCount: number;
+  createdAt: string;
+}
+
+export interface OrchestrationTaskView {
+  id: string;
+  parentTaskId: string | null;
+  type: string;
+  title: string;
+  status: string;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  blockedReason: string | null;
+}
+
+export interface LatestFrozen {
+  requirementSetId: string;
+  version: number;
+  decomposed: boolean;
+}
+
+export interface OrchestrationView {
+  cycle: OrchestrationCycle | null;
+  tasks: OrchestrationTaskView[];
+  latestFrozen: LatestFrozen | null;
+}
+
+export interface OrchestrationTriggerRequest {
+  userId?: string;
+}
+
+export interface OrchestrationTriggerResponse {
+  id: string;
+  requirementSetId: string;
+  requirementSetVersion: number;
+  mode: string;
+  createdTaskCount: number;
+  blockedTaskCount: number;
+  createdAt: string;
 }

@@ -520,13 +520,13 @@ export default function EmployeesTab() {
               직급 배정
             </button>
             <button id="btnLoadEvals" className="btn ghost" onClick={loadEvaluations}>
-              평가 리포트
+              평가 리포트 (직원 간 피드백)
             </button>
           </div>
           <h3>커스텀 지시 (custom_instructions, §5.4)</h3>
           <p className="hint">
-            사용자가 작성하는 직원 개별 지시(자유 서식, 최대 4000자). 시스템 안전 정책·도구 제약이 항상
-            우선합니다(§8.2). 비우고 저장하면 지워집니다. 팀 배정은 팀 배정 버튼으로 함께 저장됩니다.
+            사용자가 작성하는 직원 개별 지시(자유 서식, 최대 4000자). 우선순위: 시스템 안전 정책 {'>'}
+            사용자 개별 지시 {'>'} 직무·조직 기본값 {'>'} 동료 피드백(참고)(§8.2). 비우고 저장하면 지워집니다.
           </p>
           <textarea
             id="empInstructions"

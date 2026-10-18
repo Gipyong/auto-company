@@ -51,35 +51,58 @@ export default function InstructionsTab() {
   const evoFilesRef = useRef<HTMLInputElement>(null);
   const [evoFiles, setEvoFiles] = useState<File[]>([]);
 
-  const taskAssigneeRef = useRef<HTMLSelectElement>(null);
-  const taskTypeRef = useRef<HTMLSelectElement>(null);
-  const taskTitleRef = useRef<HTMLInputElement>(null);
-  const taskPromptRef = useRef<HTMLTextAreaElement>(null);
-
-  const ratingTaskRef = useRef<HTMLSelectElement>(null);
-  const ratingRaterRef = useRef<HTMLSelectElement>(null);
-  const ratingRatedRef = useRef<HTMLSelectElement>(null);
-  const ratingCategoryRef = useRef<HTMLSelectElement>(null);
-  const ratingScoreRef = useRef<HTMLInputElement>(null);
-  const ratingCommentRef = useRef<HTMLTextAreaElement>(null);
-  const ratingEvidenceRef = useRef<HTMLInputElement>(null);
-
   const detailRef = useRef<HTMLDivElement>(null);
+
+  // 오케스트레이션 상태
+  const [orchestration, setOrchestration] = useState<{
+    cycle: { id: string; requirementSetId: string; requirementSetVersion: number; mode: string; createdTaskCount: number; blockedTaskCount: number; createdAt: string } | null;
+    tasks: Array<{ id: string; parentTaskId: string | null; type: string; title: string; status: string; assigneeId: string | null; assigneeName: string | null; blockedReason: string | null }>;
+    latestFrozen: { requirementSetId: string; version: number; decomposed: boolean } | null;
+  } | null>(null);
+  const [orchBusy, setOrchBusy] = useState(false);
 
   const focusPrompt = () => {
     promptRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     window.setTimeout(() => promptRef.current?.focus(), 200);
   };
 
+  const loadOrchestration = useCallback(async (projectId: string) => {
+    try {
+      const data = await api("GET", `/api/v1/projects/${projectId}/orchestration`);
+      setOrchestration(data);
+    } catch (e) {
+      // 오케스트레이션 조회 실패는 조용히 무시 (프로젝트 초기 상태 등)
+      console.debug("orchestration load failed", e);
+    }
+  }, []);
+
+  const triggerOrchestration = async () => {
+    if (!selected || !orchestration?.latestFrozen?.requirementSetId) return;
+    setOrchBusy(true);
+    try {
+      await api("POST", `/api/v1/requirements/${orchestration.latestFrozen.requirementSetId}/trigger`, {
+        userId: store.ctx.userId,
+      });
+      toast.show("분해·배정 실행 완료");
+      await loadProjectDetail(selected.id);
+    } catch (e) {
+      toast.show((e as Error).message, "err");
+    } finally {
+      setOrchBusy(false);
+    }
+  };
+
   const loadProjectDetail = useCallback(
     async (id: string) => {
       try {
-        const [ss, ts] = await Promise.all([
+        const [ss, ts, orch] = await Promise.all([
           api<Session[]>("GET", `/api/v1/projects/${id}/clarification-sessions`),
           api<TaskRow[]>("GET", `/api/v1/projects/${id}/tasks`),
+          api("GET", `/api/v1/projects/${id}/orchestration`).catch(() => null),
         ]);
         setSessions(ss);
         setTasks(ts);
+        if (orch) setOrchestration(orch);
       } catch (e) {
         toast.show((e as Error).message, "err");
       }
@@ -337,77 +360,6 @@ export default function InstructionsTab() {
       await openSession(s.id);
     } catch (e) {
       toast.show(`세션 개설 실패: ${(e as Error).message}`, "err");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ==================== 업무 · 평가 ====================
-
-  const createTask = async () => {
-    if (!selected) return;
-    const assigneeId = taskAssigneeRef.current?.value || "";
-    const title = taskTitleRef.current?.value.trim() || "";
-    if (!assigneeId || !title) {
-      toast.show("담당 직원과 제목은 필수입니다.", "err");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api("POST", "/api/v1/tasks", {
-        projectId: selected.id,
-        assigneeId,
-        taskType: taskTypeRef.current?.value,
-        title,
-        prompt: taskPromptRef.current?.value.trim() || null,
-      });
-      if (taskTitleRef.current) taskTitleRef.current.value = "";
-      if (taskPromptRef.current) taskPromptRef.current.value = "";
-      toast.show("업무를 추가했습니다.");
-      await reloadSessions();
-    } catch (e) {
-      toast.show((e as Error).message, "err");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const showTaskDetail = async (id: string) => {
-    try {
-      const t = await api<TaskRow>("GET", `/api/v1/tasks/${id}`);
-      setTaskDetail(t);
-    } catch (e) {
-      toast.show((e as Error).message, "err");
-    }
-  };
-
-  const submitRating = async () => {
-    const taskId = ratingTaskRef.current?.value || "";
-    const raterId = ratingRaterRef.current?.value || "";
-    const ratedId = ratingRatedRef.current?.value || "";
-    if (!taskId || !raterId || !ratedId) {
-      toast.show("업무, 평가자, 대상은 필수입니다.", "err");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api("POST", "/api/v1/ratings", {
-        taskId,
-        raterId,
-        ratedId,
-        category: ratingCategoryRef.current?.value,
-        score: Number(ratingScoreRef.current?.value || 0),
-        comment: ratingCommentRef.current?.value.trim() || null,
-        evidenceRefs: (ratingEvidenceRef.current?.value || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      });
-      if (ratingCommentRef.current) ratingCommentRef.current.value = "";
-      if (ratingEvidenceRef.current) ratingEvidenceRef.current.value = "";
-      toast.show("평가를 제출했습니다. 직원 상세에서 리포트를 확인하세요.");
-    } catch (e) {
-      toast.show((e as Error).message, "err");
     } finally {
       setBusy(false);
     }
@@ -709,142 +661,66 @@ export default function InstructionsTab() {
             </div>
           ) : null}
 
+          <h3>오케스트레이션</h3>
+          {orchestration && (
+            <div className="card" id="orchestrationCard">
+              {orchestration.cycle && (
+                <div className="orch-summary">
+                  <div className="row">
+                    <span className="label">최근 사이클:</span>
+                    <span>
+                      <Badge kind="indigo">{orchestration.cycle.mode}</Badge>
+                      생성 {orchestration.cycle.createdTaskCount}건
+                      {orchestration.cycle.blockedTaskCount > 0 && (
+                        <Badge kind="hot">배정 실패 {orchestration.cycle.blockedTaskCount}건</Badge>
+                      )}
+                    </span>
+                  </div>
+                  <div className="row">
+                    <span className="label">요구사항 세트:</span>
+                    <span>v{orchestration.cycle.requirementSetVersion} ({orchestration.cycle.id.slice(0, 8)})</span>
+                  </div>
+                </div>
+              )}
+              {orchestration.latestFrozen && !orchestration.latestFrozen.decomposed && (
+                <div className="row">
+                  <button
+                    id="btnTriggerOrchestration"
+                    className="btn primary"
+                    disabled={orchBusy}
+                    onClick={triggerOrchestration}
+                  >
+                    {orchBusy ? "실행 중..." : "분해·배정 실행"}
+                  </button>
+                  <span className="hint">동결된 요구사항 세트 v{orchestration.latestFrozen.version}을(를) 분해하고 자동 배정합니다.</span>
+                </div>
+              )}
+              {orchestration.latestFrozen && orchestration.latestFrozen.decomposed && !orchestration.cycle && (
+                <div className="hint">동결된 요구사항 세트 v{orchestration.latestFrozen.version}은(는) 이미 분해되었습니다.</div>
+              )}
+            </div>
+          )}
+
           <h3>업무</h3>
           <div className="list" id="taskList">
             {tasks.length ? (
               tasks.map((t) => (
-                <div className="item click" data-task={t.id} key={t.id} onClick={() => showTaskDetail(t.id)}>
+                <div className="item" data-task={t.id} key={t.id}>
                   <div className="title">
                     {t.title} <Badge kind="indigo">{t.type || "TASK"}</Badge>{" "}
                     <Badge>{t.status || "DRAFT"}</Badge>
                   </div>
                   <div className="sub">
                     담당: {t.assignee?.name || "미배정"} · {fmtDate(t.createdAt)}
+                    {t.blockedReason && <span className="hint err"> · {t.blockedReason}</span>}
                   </div>
                 </div>
               ))
             ) : (
               <div className="item">
-                <div className="sub">아직 업무가 없습니다. 아래에서 추가할 수 있습니다.</div>
+                <div className="sub">업무는 [분해·배정 실행]을 통해 자동 생성됩니다.</div>
               </div>
             )}
-          </div>
-          {taskDetail ? (
-            <div id="taskDetail">
-              <h3>업무 상세</h3>
-              <div className="item">
-                <div className="title">
-                  {taskDetail.title} <Badge kind="indigo">{taskDetail.type || "TASK"}</Badge>{" "}
-                  <Badge>{taskDetail.status || ""}</Badge>
-                </div>
-                <div className="sub">{taskDetail.description || "지시 없음"}</div>
-                <div className="sub">
-                  ID: {taskDetail.id} · 생성 {fmtDate(taskDetail.createdAt)} · 시도{" "}
-                  {fmtNum(taskDetail.attemptCount)}/{fmtNum(taskDetail.maxAttempts)}
-                </div>
-                {taskDetail.resultSummary ? (
-                  <div className="sub">결과: {taskDetail.resultSummary}</div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-          <h3>업무 추가</h3>
-          <label htmlFor="taskAssignee">담당 직원</label>
-          <select id="taskAssignee" ref={taskAssigneeRef}>
-            {store.employees.length ? (
-              store.employees.map((e) => (
-                <option value={e.id} key={e.id}>
-                  {e.name} ({e.role})
-                </option>
-              ))
-            ) : (
-              <option value="">직원 없음</option>
-            )}
-          </select>
-          <label htmlFor="taskType">유형</label>
-          <select id="taskType" ref={taskTypeRef} defaultValue="TASK">
-            <option>TASK</option>
-            <option>BUG</option>
-            <option>STORY</option>
-            <option>EPIC</option>
-            <option>SPIKE</option>
-            <option>DOCUMENTATION</option>
-            <option>REVIEW</option>
-            <option>TEST</option>
-          </select>
-          <label htmlFor="taskTitle">제목</label>
-          <input id="taskTitle" ref={taskTitleRef} autoComplete="off" />
-          <label htmlFor="taskPrompt">지시 (prompt)</label>
-          <textarea id="taskPrompt" ref={taskPromptRef} rows={3} />
-          <div className="row">
-            <button id="btnTaskSave" className="btn primary" disabled={busy} onClick={createTask}>
-              업무 추가
-            </button>
-          </div>
-
-          <h3>평가</h3>
-          <label htmlFor="ratingTask">업무</label>
-          <select id="ratingTask" ref={ratingTaskRef}>
-            {tasks.length ? (
-              tasks.map((t) => (
-                <option value={t.id} key={t.id}>
-                  {t.title}
-                </option>
-              ))
-            ) : (
-              <option value="">업무 없음</option>
-            )}
-          </select>
-          <label htmlFor="ratingRater">평가자</label>
-          <select id="ratingRater" ref={ratingRaterRef}>
-            {store.employees.length ? (
-              store.employees.map((e) => (
-                <option value={e.id} key={e.id}>
-                  {e.name} ({e.role})
-                </option>
-              ))
-            ) : (
-              <option value="">직원 없음</option>
-            )}
-          </select>
-          <label htmlFor="ratingRated">대상</label>
-          <select id="ratingRated" ref={ratingRatedRef}>
-            {store.employees.length ? (
-              store.employees.map((e) => (
-                <option value={e.id} key={e.id}>
-                  {e.name} ({e.role})
-                </option>
-              ))
-            ) : (
-              <option value="">직원 없음</option>
-            )}
-          </select>
-          <label htmlFor="ratingCategory">카테고리</label>
-          <select id="ratingCategory" ref={ratingCategoryRef} defaultValue="CODE_QUALITY">
-            <option>CODE_QUALITY</option>
-            <option>LOGIC</option>
-            <option>COOPERATION</option>
-            <option>DOC_COMPLETENESS</option>
-          </select>
-          <label htmlFor="ratingScore">점수 (0~5)</label>
-          <input
-            id="ratingScore"
-            ref={ratingScoreRef}
-            type="number"
-            min={0}
-            max={5}
-            step={0.5}
-            defaultValue="4"
-            inputMode="decimal"
-          />
-          <label htmlFor="ratingComment">코멘트</label>
-          <textarea id="ratingComment" ref={ratingCommentRef} rows={2} />
-          <label htmlFor="ratingEvidence">근거 (콤마: PR-123, commit-abc, test-report)</label>
-          <input id="ratingEvidence" ref={ratingEvidenceRef} autoComplete="off" />
-          <div className="row">
-            <button id="btnRatingSave" className="btn primary" disabled={busy} onClick={submitRating}>
-              평가 제출
-            </button>
           </div>
         </div>
       ) : null}
