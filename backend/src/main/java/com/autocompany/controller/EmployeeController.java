@@ -62,7 +62,8 @@ public class EmployeeController {
     // 직원 채용
     @PostMapping("/employees")
     public ResponseEntity<Employee> hireEmployee(@RequestBody HireRequest request) {
-        Employee employee = employeeService.createEmployee(request.userId, request.name, request.role);
+        Employee employee = employeeService.createEmployee(request.userId, request.name, request.role,
+                request.customInstructions);
         return ResponseEntity.status(201).body(employee);
     }
 
@@ -86,6 +87,13 @@ public class EmployeeController {
         return ratingEngineService.getEvaluationReport(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 직원 부분 갱신 (EMP-001 — 커스텀 지시 편집 §5.4)
+    @PatchMapping("/employees/{id}")
+    public ResponseEntity<Employee> updateEmployee(@PathVariable UUID id,
+                                                   @RequestBody EmployeeUpdateRequest request) {
+        return ResponseEntity.ok(employeeService.updateEmployee(id, request.name, request.customInstructions));
     }
 
     // 직원 직급 배정/변경
@@ -244,6 +252,12 @@ public class EmployeeController {
         public UUID userId;
         public String name;
         public String role;
+        public String customInstructions; // §5.4 EMP-001(선택)
+    }
+
+    public static class EmployeeUpdateRequest {
+        public String name;
+        public String customInstructions; // §5.4 EMP-001 — null 유지, 빈 문자열 지우기
     }
 
     public static class GradeAssignRequest {

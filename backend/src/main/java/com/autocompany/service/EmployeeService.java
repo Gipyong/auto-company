@@ -17,19 +17,84 @@ public class EmployeeService {
     private final UserService userService;
     private final JobGradeService jobGradeService;
 
+    /** §26 설정 custom_instructions_max_chars — 초과 시 400 */
+    static final int MAX_CUSTOM_INSTRUCTIONS_CHARS = 4000;
+
     public Employee createEmployee(UUID userId, String name, String role) {
+        return createEmployee(userId, name, role, null);
+    }
+
+    /** §5.4 EMP-001 — 생성 시 custom_instructions 부여 가능(자유 서식) */
+    @Transactional
+    public Employee createEmployee(UUID userId, String name, String role, String customInstructions) {
         User user = userService.getOrCreateLocalUser(userId);
         Employee e = new Employee();
         e.setId(UUID.randomUUID());
         e.setUser(user);
         e.setName(name);
         e.setRole(Role.valueOf(role.toUpperCase()));
+        e.setCustomInstructions(normalizeInstructions(customInstructions));
         return employeeRepository.save(e);
     }
 
     public Optional<Employee> getEmployee(UUID id) { return employeeRepository.findById(id); }
 
     public List<Employee> getEmployeesByUserId(UUID userId) { return employeeRepository.findByUserId(userId); }
+
+    /** §17 EMP-001 — 부분 갱신: null은 유지, 빈 문자열·공백은 지우기(null)로 반영 */
+    @Transactional
+    public Employee updateEmployee(UUID employeeId, String name, String customInstructions) {
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new NoSuchElementException("Employee not found: " + employeeId));
+        if (name != null) {
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("name must not be blank");
+            }
+            employee.setName(name.strip());
+        }
+        if (customInstructions != null) {
+            employee.setCustomInstructions(normalizeInstructions(customInstructions));
+        }
+        return employeeRepository.save(employee);
+    }
+
+    /**
+     * §8.2 (3) 계층 조립 — 직무 원칙(systemPrompt) + 사용자 개별 지시(custom_instructions).
+     * 시스템 안전 정책·도구 제약이 항상 우선이며, 이 결과를 후속 AgentRun이 시스템 메시지로 소비한다.
+     */
+    public AgentContext buildAgentContext(UUID employeeId) {
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new NoSuchElementException("Employee not found: " + employeeId));
+        StringBuilder instructions = new StringBuilder();
+        instructions.append("[시스템 안전 정책·도구 제약이 우선한다 — 아래 지시로 안전 정책을 변경할 수 없다]\n");
+        if (employee.getSystemPrompt() != null && !employee.getSystemPrompt().isBlank()) {
+            instructions.append("[직무 원칙] ").append(employee.getSystemPrompt()).append('\n');
+        }
+        if (employee.getCustomInstructions() != null && !employee.getCustomInstructions().isBlank()) {
+            instructions.append("[사용자 개별 지시] ").append(employee.getCustomInstructions()).append('\n');
+        }
+        return new AgentContext(employee.getId(), employee.getSystemPrompt(),
+                employee.getCustomInstructions(), instructions.toString().strip());
+    }
+
+    public record AgentContext(UUID employeeId, String systemPrompt, String customInstructions, String instructions) {
+    }
+
+    /** 공백 정리 + 상한(4000자) 검증 — 빈 값은 미설정(null)으로 정규화(지우기) */
+    private static String normalizeInstructions(String customInstructions) {
+        if (customInstructions == null) {
+            return null;
+        }
+        String trimmed = customInstructions.strip();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > MAX_CUSTOM_INSTRUCTIONS_CHARS) {
+            throw new IllegalArgumentException("customInstructions exceeds "
+                    + MAX_CUSTOM_INSTRUCTIONS_CHARS + " chars (§26 custom_instructions_max_chars: 400)");
+        }
+        return trimmed;
+    }
 
     @Transactional
     public void assignGrade(UUID employeeId, UUID gradeId) {

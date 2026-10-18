@@ -380,4 +380,60 @@ public class EmployeeIntegrationTest {
                 .content("{\"userId\":\"" + userId + "\",\"name\":\"중계 프로젝트\",\"clientId\":\"" + clientId + "\"}"))
                 .andExpect(status().isNotFound());
     }
+
+    // ==================== EMP-001 직원 커스텀 지시 (§5.4) ====================
+
+    @Test
+    public void testUpdateEmployeeInstructionsReturns200() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder()
+                .name("김개발").customInstructions("항상 테스트 먼저").build();
+        employee.setId(employeeId);
+        when(employeeService.updateEmployee(eq(employeeId), any(), eq("항상 테스트 먼저"))).thenReturn(employee);
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"customInstructions\":\"항상 테스트 먼저\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    public void testUpdateEmployeeInstructionsOverLimitReturns400() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        when(employeeService.updateEmployee(eq(employeeId), any(), any()))
+                .thenThrow(new IllegalArgumentException("customInstructions exceeds 4000 chars (§26 custom_instructions_max_chars: 400)"));
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"customInstructions\":\"너무 긴 지시\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void testUpdateEmployeeMissingReturns404() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        when(employeeService.updateEmployee(eq(employeeId), any(), any()))
+                .thenThrow(new java.util.NoSuchElementException("Employee not found: " + employeeId));
+
+        mockMvc.perform(patch("/api/v1/employees/{id}", employeeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"customInstructions\":\"지시\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void testHireEmployeeWithInstructionsReturns201() throws Exception {
+        UUID userId = UUID.randomUUID();
+        com.autocompany.entity.Employee employee = com.autocompany.entity.Employee.builder()
+                .name("이개발").customInstructions("보안 우선").build();
+        employee.setId(UUID.randomUUID());
+        when(employeeService.createEmployee(eq(userId), eq("이개발"), eq("DEVELOPER"), eq("보안 우선")))
+                .thenReturn(employee);
+
+        mockMvc.perform(post("/api/v1/employees")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + userId + "\",\"name\":\"이개발\",\"role\":\"DEVELOPER\","
+                        + "\"customInstructions\":\"보안 우선\"}"))
+                .andExpect(status().isCreated());
+    }
 }

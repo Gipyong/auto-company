@@ -254,7 +254,34 @@ function openEmployee(id) {
   renderSelects();
   $("#empGradeSelect").value = e.gradeId || "";
   $("#evalsBox").innerHTML = "";
+  $("#empInstructions").value = e.customInstructions || "";
+  $("#empInstructionsResult").textContent = "";
   $("#empDetail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function saveEmployeeInstructions() {
+  if (!state.selectedEmployeeId) return;
+  const value = $("#empInstructions").value;
+  const btn = $("#btnEmpInstructionsSave");
+  busy(btn, true);
+  try {
+    await api("PATCH", `/api/v1/employees/${state.selectedEmployeeId}`, { customInstructions: value });
+    $("#empInstructionsResult").textContent = value.trim()
+      ? "커스텀 지시를 저장했습니다."
+      : "커스텀 지시를 지웠습니다.";
+    $("#empInstructionsResult").className = "status ok";
+    toast("직원 지시를 저장했습니다.");
+    await refreshAll();
+    openEmployee(state.selectedEmployeeId);
+  } catch (e) {
+    $("#empInstructionsResult").textContent = e.status === 400
+      ? `저장 실패: ${e.message} (최대 4000자, §26)`
+      : `저장 실패: ${e.message}`;
+    $("#empInstructionsResult").className = "status err";
+    toast(e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
 }
 
 async function assignGrade() {
@@ -1339,6 +1366,7 @@ function bindEvents() {
   $("#btnEmpClose").addEventListener("click", () => { $("#empDetail").hidden = true; state.selectedEmployeeId = null; });
   $("#btnAssignGrade").addEventListener("click", assignGrade);
   $("#btnLoadEvals").addEventListener("click", loadEvaluations);
+  $("#btnEmpInstructionsSave").addEventListener("click", saveEmployeeInstructions);
 
   // 직급
   $("#btnGradeSave").addEventListener("click", saveGrade);

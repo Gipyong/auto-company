@@ -44,6 +44,10 @@ public class Employee {
     private float avgRating = 0.0f;
     
     private String systemPrompt;
+
+    // §5.4 EMP-001 — 사용자가 작성한 개별 지시(자유 서식, 최대 4000자, 안전 정책 우선 §8.2)
+    @Column(name = "custom_instructions", columnDefinition = "TEXT")
+    private String customInstructions;
     
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
