@@ -1,11 +1,12 @@
 # AI SI Company Platform — DESIGN.md
 
-> 버전: 1.6 (사용자 다중 포지션·다중 모달 접수·직원 커스텀 지시)  
+> 버전: 1.6.1 (사용자 다중 포지션·다중 모달 접수·직원 커스텀 지시 + 재검토 정정)  
 > 상태: 구현 기준 설계 — Java 21 / Spring Boot 3.x(안정 버전) + Maven 백엔드 기준  
 > 목표: 로컬 우선으로 실행 가능하고, 다른 PC·서버로 재현/배포 가능한 AI 기반 소프트웨어 개발 조직 플랫폼  
 > 위치 핵심: 사용자는 고정 포지션이 아니다 — **운영자**(조직 구성·통제), **발주 고객**(요구 제출·확정), **기술 조언자·전문가**(디자이너·TO 등 직접 지시), **외부 고객 중계자**를 오간다. 시스템은 사용자를 전문가·비전문가로 단정하지 않고 전문성 신호에 따라 조응한다(§0, §28). 요구사항 이외의 기술 결정은 기본적으로 AI 직원 내부 협의가 처리한다(§28, §29).
 
 변경 이력:
+- v1.6.1: 전체 재검토 정정 — 세션 취소 규칙(고객 포지션, 파이프라인 개설 포함), 파이프라인 자동 세션 상한 범위 명시, 수신함 엔드포인트 `GET /users/{userId}/pending-sessions` 정리, 세션 `client_id`=Project 상속 규칙, User.role↔포지션 구분, 포인터·공백·문법 정정.
 - v1.6: 사용자 다중 포지션(운영자·발주 고객·기술 조언자·전문가·중계자), 외부 고객(Client) 중계, **사용자 개설 요구사항 세션**(§28.6), 골 다중 모달 접수(파일·이미지 첨부 §28.7), 직원 커스텀 지시(custom_instructions) 설계. 형식 오류 정정.
 - v1.5: 전체 압축 정리. 규범적 내용(엔티티·API·프로토콜·결정)은 유지하고 중복 서술을 제거했다.
 - v1.4: 사용자=외주 고객 포지션 확정. 요구사항 명확화 파이프라인(§28)과 자율 오케스트레이션(§29) 신설. 고객 자발적 전문 요구사항 수용 설계 포함.
@@ -139,7 +140,7 @@ Java 구조 규칙: 모듈형 모놀리스(api/application/domain/infrastructure
 `id, name, slug(unique), description?, settings_json(조직 기본 정책), status: active|archived`.
 
 ### 5.2 User
-`id, email(unique), display_name, password_hash?, auth_provider: local|oidc|none, role: owner|admin|operator|viewer, is_active, last_login_at?`. 최초 사용자 생성 마법사 제공. 기본 비밀번호 소스/문서 금지.
+`id, email(unique), display_name, password_hash?, auth_provider: local|oidc|none, role: owner|admin|operator|viewer, is_active, last_login_at?`. 최초 사용자 생성 마법사 제공. 기본 비밀번호 소스/문서 금지. `role`은 시스템 권한이며, 운영자·발주 고객 등 포지션(§0 원칙 11)은 이 role이 아니라 업무 문맥이다 — 같은 사용자가 프로젝트마다 다른 포지션을 가질 수 있다.
 
 ### 5.3 Team
 `id, organization_id, name, slug, description?, team_lead_employee_id?, purpose, status: active|archived`.
@@ -249,7 +250,7 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 - frozen 이후 content 불변; 변경은 새 세션→새 버전(superseded 표시 보존). 프로젝트 내 모든 Task의 요구 근거는 이 기록을 참조한다.
 
 ### 5.26 Client(외부 고객)
-`id, organization_id, display_name, contact?(연락 메모), created_by_user_id, status: active|archived, notes`. 조직이 수임하는 외부 고객(사용자가 직접 유치해서 중계하는 대상; §0 원칙 11 중계자 포지션). MVP에서 외부 고객은 로그인·API 접근 권한이 없고(§28.5 확장), 사용자(운영자)가 요구·의견을 그대로 중계한다(`client_relayed`, 원문 보존+감사). 고객 개인 데이터는 요구 수행에 필요한 범위로만 전파(§21). `Project.client_id`·`ClarificationSession.client_id`가 참조한다.
+`id, organization_id, display_name, contact?(연락 메모), created_by_user_id, status: active|archived, notes`. 조직이 수임하는 외부 고객(사용자가 직접 유치해서 중계하는 대상; §0 원칙 11 중계자 포지션). MVP에서 외부 고객은 로그인·API 접근 권한이 없고(§28.5 확장), 사용자(운영자)가 요구·의견을 그대로 중계한다(`client_relayed`, 원문 보존+감사). 고객 개인 데이터는 요구 수행에 필요한 범위로만 전파(§21). `Project.client_id`·`ClarificationSession.client_id`가 참조하며, 세션 `client_id`는 `Project.client_id`를 상속한다(세션 생성 API에서 지시하면 override 가능).
 
 ---
 
@@ -300,7 +301,7 @@ BLOCKED → READY(해소) | CANCELLED
 모든 전이는 TaskTransition/이벤트 기록; 무효 전이는 API 거부. BLOCKED 사유에는 `client_input_required`(명확화 세션 대기) 포함(§28).
 
 ### 7.2 주요 워크플로
-**RequirementDiscoveryWorkflow(§28)**: 골 접수 → 리드가 세션 개설·협의 참석(아키텍트/QA/보안/디자이너) → 1차 분석(모호성·누락·리스크·범위 경계) → "물어보지 않아도 알 수 있는 것 vs 반드시 물어야 하는 것" 분리 → 최소 질문 구성(기능별 개별 체크박스+기타) → 검토 체인 통과 → `waiting_client` 큐 → 고객 접속 시 응답(오프라인이면 큐 유지) → 답변 해석(불명확 시 후속 질문으로 재확인) → 기록 승인 → 동결(불변 RequirementSet) → 부족하면 새 세션(반복 상한 3회; 초과 시 고객 통지·대기) → 충분하면 §29.
+**RequirementDiscoveryWorkflow(§28)**: 골 접수 → 리드가 세션 개설·협의 참석(아키텍트/QA/보안/디자이너) → 1차 분석(모호성·누락·리스크·범위 경계) → "물어보지 않아도 알 수 있는 것 vs 반드시 물어야 하는 것" 분리 → 최소 질문 구성(기능별 개별 체크박스+기타) → 검토 체인 통과 → `waiting_client` 큐 → 고객 접속 시 응답(오프라인이면 큐 유지) → 답변 해석(불명확 시 후속 질문으로 재확인) → 기록 승인 → 동결(불변 RequirementSet) → 부족하면 새 세션(파이프라인 자동 반복 상한 3회; 초과 시 고객 통지·대기) → 충분하면 §29.
 
 **ProjectBootstrapWorkflow**: 설정 검증 → 저장소 접근 → 모델·예산 확인 → workspace 이미지·테스트 명령 확인 → 초기 분석 → 개요·기술 부채 리포트 → 고객 검토 후 실행.
 
@@ -400,7 +401,7 @@ root 아님 / read-only rootfs(가능 시) / 불필요 capabilities 제거 / **D
 
 **결정 우선순위**: 안전·법률·보안 > 고객 명시적 요구 > 자동 품질 게이트 > 아키텍처 결정 > 팀 기술 판단 > 개인 선호. 합의 없으면 반대 의견을 Decision에 보존.
 
-**기술 결정은 고객에게 묻지 않는다**(§28.2): 세션 로그인 vs JWT, DB 채택, 라이브러리 등은 내부 Decision으로 처리. "고객 시간을 아끼는 법은 잘 묻는 것이 아니라 처음부터 묻지 않는 것"이 기본 방침.
+**기술 결정은 고객에게 묻지 않는다**(§28.2): 세션 로그인 vs JWT, DB 채택, 라이브러리 등은 내부 Decision으로 처리. "고객 시간을 아끼는 법은 잘 묻는 것이 아니라 처음부터 묻지 않는 것"이 기본 방침. 단, 운영자·기술 조언자 포지션에서 사용자가 직접 제시한 지시는 제약으로 수용한다(§28.2.2).
 
 ---
 
@@ -458,14 +459,14 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Projects / Tasks**: `GET/POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`, `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
 
 **Goals / Requirements(§28)**
-- `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}]}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환)
-- `POST /projects/{project_id}/clarification-sessions` — **사용자 개설 세션** `{userId, changeNote?(불변 원문), attachments?}` → 새 `session_number`+`parent_session_id` 연결; 같은 프로젝트에 `open|waiting_client` 세션 존재 시 409(§28.6)
-- `POST /clarification-sessions/{id}/cancel` — 개설자(사용자)가 `open|waiting_client` 세션 취소(Audit; frozen 이후 불가)
+- `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}]}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환; 세션 `client_id`=Project.client_id 상속)
+- `POST /projects/{project_id}/clarification-sessions` — **사용자 개설 세션** `{userId, changeNote?(불변 원문), attachments?}` → 새 `session_number`+`parent_session_id` 연결; 같은 프로젝트에 `open|waiting_client` 세션 존재 시 409(§28.6; 파이프라인 자동 반복 상한과 별개)
+- `POST /clarification-sessions/{id}/cancel` — 고객 포지션 사용자가 `open|waiting_client` 세션 취소(사용자 개설·파이프라인 개설 모두; Audit; frozen 이후 불가)
 - `GET /projects/{project_id}/clarification-sessions` / `GET /clarification-sessions/{id}`
 - `POST /clarification-sessions/{id}/answers` — `{userId, answers:[{questionId, selectedValues, otherText}]}`; 필수 미답 시 409+남은 질문 정보
 - `POST /clarification-sessions/{id}/freeze` — 동결→RequirementSet 생성; frozen은 새 버전만 가능(수정 API 없음; 규칙 §28.6)
 - `GET /projects/{project_id}/requirements` — 누적 기록(버전별)
-- `GET /clients/user/{userId}/pending-sessions` — 고객 접속 시 미답변 세션 목록("질문 수신함"; MVP 알림 대체)
+- `GET /users/{userId}/pending-sessions` — 고객 포지션 사용자 접속 시 미답변 세션 목록("질문 수신함"; MVP 알림 대체)
 
 **Clients(§5.26)**: `GET/POST /clients`, `GET/PATCH /clients/{id}`(외부 고객 명부; MVP 로그인 없음, 운영자 중계)
 
@@ -480,7 +481,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask. REQ 이후 **골 입력 탭(텍스트+첨부 업로드)+명확화 세션 탭(개별 체크박스·기타 자유 텍스트·사용자 세션 개설·취소)** 추가, 세션 큐가 대시보드 상단 강조. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask. REQ 이후 **골 입력 탭(텍스트+첨부 업로드)+명확화 세션 탭(개별 체크박스·기타 자유 텍스트·사용자 세션 개설·취소)+직원 지시 편집(EMP-001 이후)** 추가, 세션 큐가 대시보드 상단 강조. 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 
@@ -538,7 +539,7 @@ auto-company/
 
 위협: prompt injection 포함 저장소 파일 / 잘못된 모델 출력 / 의도치 않은 shell / 키 노출 / workspace 통한 호스트 접근 / 무단 네트워크 / PR·merge 남용 / 비용 고갈 / 평가 담합·편향 / 손상·오래된 문서 / **고객 데이터 유출·질문 과다(고객 부담)·중계 기록 오염** / **첨부 해석 오류·악성 콘텐츠(§28.7)**
 
-방어: RBAC·서버 권한 /allowlist 경로·명령 / 컨테이너 한도·별도 runner / secret redaction·store / egress 제한 / budget·token·시간 hard limit / 승인 분리·감사 / 사용자 텍스트·첨부=데이터 취급 / 첨부는 정적 저장만·실행 금지(§28.7) / 의존성·이미지 갱신 절차 / 백업 암호화·복구 테스트 / 기본 운영 서버·외부 고객 데이터 접근 금지 / **고객 질문·세션·기록 접근 권한 별도 검증 / 중계 원문 보존+감사**
+방어: RBAC·서버 권한 / allowlist 경로·명령 / 컨테이너 한도·별도 runner / secret redaction·store / egress 제한 / budget·token·시간 hard limit / 승인 분리·감사 / 사용자 텍스트·첨부=데이터 취급 / 첨부는 정적 저장만·실행 금지(§28.7) / 의존성·이미지 갱신 절차 / 백업 암호화·복구 테스트 / 기본 운영 서버·외부 고객 데이터 접근 금지 / **고객 질문·세션·기록 접근 권한 별도 검증 / 중계 원문 보존+감사**
 
 로컬이어도 웹 UI를 외부 네트워크 공개 금지; 원격 활성시 인증·TLS·방화벽·secret 관리·업데이트 정책 별도 구성.
 
@@ -607,8 +608,8 @@ clarification:
   max_questions_per_session: 5
   review_chain_roles: [PLANNER, ARCHITECT, QA_ENGINEER, SECURITY_DEVOPS, PROJECT_MANAGER]
   allow_other_by_default: true
-  max_sessions_per_goal: 3              # 초과 시 운영자 개입 기록
-  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note, goal_attachments, relayed_note]
+  max_sessions_per_goal: 3              # 파이프라인 자동 세션 반복 상한; 사용자 개설 세션은 제외
+  expert_signal_sources: [goal_text, question_answers_free_text, client_extra_note, goal_attachments, client_relayed]
   allow_user_opened_sessions: true      # 동시 open|waiting_client 1개; 초과 409
   attachments: { max_count_per_goal: 10, max_file_size_mb: 50, native_formats: [md, txt, csv, json, pdf], parser_formats: [xlsx, pptx, docx, hwp], image_requires_vision: true }
 employees:
@@ -645,9 +646,9 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 
 **실행 인프라**: 16. `TASK-001` Task 상태 머신+전이 테스트. 17. `WF-001` worker lease·retry·pause/resume. 18. `AGENT-001` context builder+structured output. 19. `TOOL-001` Tool Broker+권한 정책. 20. `WS-001` Docker workspace lifecycle. 21. `GIT-001` branch/worktree/diff 도구. 22. `QA-001` command template+TestRun. 23. `PR-001` 내부 PR/Review+자기승인 방지. 24. `DOC-001` Artifact/Document revision+검색.
 
-**UI/E2E/운영**: 25. `UI-001` 고객 대시보드+타임라인(Next.js). 26. `UI-002` 콘솔 명확화 세션 탭+골 입력 탭. 27. `E2E-001` 골→명확화→동결→분해→배정 목 시나리오. 28. `OPS-001` backup/restore+preflight.
+**UI/E2E/운영**: 25. `UI-001` 고객 대시보드+타임라인(Next.js). 26. `UI-002` 콘솔 명확화 세션 탭+골 입력 탭. 27. `E2E-001` 골→명확화→동결→분해→배정 목 시나리오(사용자 개설 세션 진화 포함). 28. `OPS-001` backup/restore+preflight.
 
-**예산**: 29. `COST-001` 예산 경고+quota wait/resume. 30. `COST-002` BudgetPolicy 복수 한도+UI. 31. `COST-003` 원자적 reserve/settle+경쟁 테스트. 32. `COST-004` rolling 5h·달력 월·일일 요청 집계. 33. `COST-005`: 한도 경고, 일회성 grant 승인, rolling window 회복 후 작업 재개.
+**예산**: 29. `COST-001` 예산 경고+quota wait/resume. 30. `COST-002` BudgetPolicy 복수 한도+UI. 31. `COST-003` 원자적 reserve/settle+경쟁 테스트. 32. `COST-004` rolling 5h·달력 월·일일 요청 집계. 33. `COST-005` 한도 경고, 일회성 grant 승인, rolling window 회복 후 작업 재개.
 
 각 티켓: `acceptance_criteria`·의존·테스트 계획·담당·리뷰어 필수(AI 구현 동일 적용).
 
@@ -731,14 +732,14 @@ documents: { require_evidence_refs: true, mark_stale_on_code_change: true, defau
 통과 못한 질문은 다시 협의 회의(§13)로. 체인 순서는 구현 상수; 없는 역할은 건너뛰고 감사 기록. 고객 제시 전문 요구가 바닥선 충돌(§28.2.3)도 체인에서 처리 — 임의 진행 없이 제품 수준 후속 질문을 같은 체인에 통과.
 
 ### 28.5 오프라인 고객 지원·세션 관리
-세션 라이프사이클 `open → waiting_client → review → frozen` / 접속 시 `waiting_client` 목록 상단 표시, `GET /clients/user/{userId}/pending-sessions` / **MVP 푸시 없음** — 앱 전환 시 푸시+만료·요약 규칙 추가 / 장기 무응답: `assumption_if_skipped` 근거로 진행 여부를 체인이 판단 기록. 고객 원문(goal_text)은 항상 보존되므로, 이후 정정 요청 시 새 세션으로 대응. 세션은 파이프라인 개설(`opened_by_employee_id`)과 사용자 개설(`opened_by_user_id`, §28.6) 양쪽이며, 개설자는 자기 세션을 `open|waiting_client` 동안 취소할 수 있다(Audit).
+세션 라이프사이클 `open → waiting_client → review → frozen` / 접속 시 `waiting_client` 목록 상단 표시, `GET /users/{userId}/pending-sessions` / **MVP 푸시 없음** — 앱 전환 시 푸시+만료·요약 규칙 추가 / 장기 무응답: `assumption_if_skipped` 근거로 진행 여부를 체인이 판단 기록. 고객 원문(goal_text)은 항상 보존되므로, 이후 정정 요청 시 새 세션으로 대응. 세션은 파이프라인 개설(`opened_by_employee_id`)과 사용자 개설(`opened_by_user_id`, §28.6) 양쪽이며, 고객 포지션 사용자는 `open|waiting_client` 세션을 취소할 수 있다(Audit; §17).
 
 ### 28.6 동결(Freeze)·불변·진화
 **동결 시점**: 고객 필수 질문 답 완료+체인이 기록 승인 / 또는 고객 명시 지시("이 정도면 진행") / 또는 **사용자 개설 세션에서 변경 내용이 이미 충분히 구체적**(질문 0개 경로: 체인은 기록 승인만 수행).
 동결 즉시 `frozen`+RequirementSet 생성(불변). 이후:
 - 질문·답변·기록 수정 API 차단(409+Audit)
 - **요구는 살아있다 — 진화는 두 가지 출발점이 있다**: (a) 직원들이 새 요구·변경 필요를 감지하면 파이프라인이 새 세션 개설, (b) **사용자가 직접 새 세션을 개설**(`POST /projects/{id}/clarification-sessions`, §17; 텍스트 취지 노트+첨부, §28.7 입력과 동일). 새 세션은 `session_number+1`·`parent_session_id` 연결.
-- 동시 진행 세션은 프로젝트당 1개(`open|waiting_client` 존재 시 개설 409 — 기존 세션 응답·취소 후 재시도; 취소는 개설자만, Audit)
+- 동시 진행 세션은 프로젝트당 1개(`open|waiting_client` 존재 시 개설 409 — 기존 세션 응답·취소 후 재시도; 취소는 고객 포지션 사용자, Audit)
 - 기록이 달라지면 새 RequirementSet 버전 추가, 이전은 `superseded` 표시 보존(감사·회귀 분석 자료). 새 버전 동결 시 진행 중 오케스트레이션은 §29의 재계획 규칙 따름.
 
 ### 28.7 다중 모달 골 접수(텍스트+파일·이미지)
