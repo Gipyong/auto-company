@@ -251,6 +251,8 @@ UsageLedger: `organization/project/task/agent_run, resource_type: model_input|mo
 
 ### 5.26 Client(외부 고객)
 `id, organization_id, display_name, contact?(연락 메모), created_by_user_id, status: active|archived, notes`. 조직이 수임하는 외부 고객(사용자가 직접 유치해서 중계하는 대상; §0 원칙 11 중계자 포지션). MVP에서 외부 고객은 로그인·API 접근 권한이 없고(§28.5 확장), 사용자(운영자)가 요구·의견을 그대로 중계한다(`client_relayed`, 원문 보존+감사). 고객 개인 데이터는 요구 수행에 필요한 범위로만 전파(§21). `Project.client_id`·`ClarificationSession.client_id`가 참조하며, 세션 `client_id`는 `Project.client_id`를 상속한다(세션 생성 API에서 지시하면 override 가능).
+- 구현(MVP): 조직 테이블 없이 `organization_id` UUID 스코프(직급·모델과 동일 패턴). 중계에는 `active` 클라이언트만 사용 가능 — `archived`로의 새 연결(프로젝트 생성·세션 개설)은 409. 아카이브는 `PATCH status=archived`(기존 프로젝트·세션 연결은 보존).
+- 중계 감사: 중계 세션(`client_id≠null`) 개설·동결 시 토론 로그에 "외부 고객 {이름} 중계 — 원문 보존(§5.26)"을 남긴다. 동결 기록의 고객 원천 항목(goal_text·답변·첨부·기타 응답)은 source=`client_relayed`, 근거에 "외부 고객 {이름} 중계" 표시(§5.25).
 
 ---
 
@@ -456,11 +458,11 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 
 **Models**: `GET/POST /model-providers`(`{organizationId, name(unique), providerType, baseUrl?, secretRef, enabled, rateLimitPolicy?}`; healthStatus는 UNKNOWN 시작), `POST /model-providers/{id}/health-check`(MODEL-002), `GET/POST /model-profiles`(`providerId, name(provider unique), providerModelId, capabilities, qualityTier, costs(미상=비우기), contextWindow, maxOutputTokens, supports*, latencyClass, localOnly, enabled, metadata?`)
 
-**Projects / Tasks**: `GET/POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`, `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
+**Projects / Tasks**: `GET/POST /projects`(`{userId, name?, description?, clientId?(§5.26 외부 고객 연결, active만 — archived 409)}`), `GET /projects/{id}`, `POST /projects/{id}/bootstrap`, `GET/POST /projects/{id}/tasks`, `GET/PATCH /tasks/{id}`, `POST /tasks/{id}/assign|pause|resume|cancel`
 
 **Goals / Requirements(§28)**
-- `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}]}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환; 세션 `client_id`=Project.client_id 상속)
-- `POST /projects/{project_id}/clarification-sessions` — **사용자 개설 세션** `{userId, changeNote?(불변 원문), attachments?}` → 새 `session_number`+`parent_session_id` 연결; 같은 프로젝트에 `open|waiting_client` 세션 존재 시 409(§28.6; 파이프라인 자동 반복 상한과 별개)
+- `POST /projects/{project_id}/goal` — `{userId, goalText?, attachments?:[{filename, mediaType, sizeBytes, contentBase64|contentUri}], clientId?}`(최소 1개 필수) → 첨부는 Artifact 저장+파싱(§28.7) 후 ClarificationSession(open) 개설+협의 개시(호출 세션 정보 반환; 세션 `client_id`=Project.client_id 상속, `clientId` 지시 시 override(§5.26))
+- `POST /projects/{project_id}/clarification-sessions` — **사용자 개설 세션** `{userId, changeNote?(불변 원문), attachments?, clientId?(Project 상속 override)}` → 새 `session_number`+`parent_session_id` 연결; 같은 프로젝트에 `open|waiting_client` 세션 존재 시 409(§28.6; 파이프라인 자동 반복 상한과 별개)
 - `POST /clarification-sessions/{id}/cancel` — 고객 포지션 사용자가 `open|waiting_client` 세션 취소(사용자 개설·파이프라인 개설 모두; Audit; frozen 이후 불가)
 - `GET /projects/{project_id}/clarification-sessions` / `GET /clarification-sessions/{id}`
 - `POST /clarification-sessions/{id}/answers` — `{userId, answers:[{questionId, selectedValues, otherText}]}`; 필수 미답 시 409+남은 질문 정보
@@ -468,7 +470,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 - `GET /projects/{project_id}/requirements` — 누적 기록(버전별)
 - `GET /users/{userId}/pending-sessions` — 고객 포지션 사용자 접속 시 미답변 세션 목록("질문 수신함"; MVP 알림 대체)
 
-**Clients(§5.26)**: `GET/POST /clients`, `GET/PATCH /clients/{id}`(외부 고객 명부; MVP 로그인 없음, 운영자 중계)
+**Clients(§5.26)**: `GET /clients?organizationId=`(명부), `POST /clients`(`{organizationId, displayName, contact?, notes?, createdByUserId?}`), `GET /clients/{id}`, `PATCH /clients/{id}`(`{displayName?, contact?, notes?, status?: active|archived}` 아카이브 포함; 외부 고객 명부; MVP 로그인 없음, 운영자 중계)
 
 **Orchestration(§29)**: `POST /requirements/{requirement_set_id}/trigger`(동결 기록 기반 분해 개시; 동결 직후 자동 트리거도 존재), `GET /projects/{project_id}/orchestration`(단계·Epic/Story/Task·배정 요약)
 
@@ -481,7 +483,7 @@ Prefix `/api/v1`. 오류 응답은 안정적 `error_code`+사용자 메시지+co
 **Docs / Meetings / Audit**: `GET /projects/{id}/documents`, `POST /projects/{id}/documents/search`, `POST /projects/{id}/ask`, `POST /projects/{id}/meetings`, `GET /meetings/{id}`, `GET /audit-events`
 
 ### Web Console(초기 UI, 구현됨)
-`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)**. 미구현: 직원 지시 편집(EMP-001 이후). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
+`backend/src/main/resources/static/`(index.html·app.js·style.css)을 Spring Boot가 `/`에서 정적 서빙. 빌드도구·외부 의존성 없음(VM 네트워크 제한). 범위=구현된 API만: 템플릿 import / 직원·직급·모델 풀 / provider·profile / 프로젝트·업무 생성 / 피드백 / 메시지 / Ask / **골 접수 탭(텍스트+첨부 업로드, 클라이언트에서 base64 인코딩 → `POST /projects/{id}/goal` §28.7-6 contentBase64 MVP)** / **세션 수신함·큐(`GET /users/{userId}/pending-sessions`, WAITING_CLIENT 상단 강조+탭 배지)** / **세션 질문·답변 폼(체크박스·라디오·기타 자유 텍스트·건너뛰기 → `POST /clarification-sessions/{id}/answers`)** / **동결·요구사항 표시(`POST .../freeze` + `GET /projects/{id}/requirements` 5그룹 표시)** / **진화·취소(REQ-005: `POST /projects/{id}/clarification-sessions` 새 세션 개설(변경 원문+첨부), 세션 취소 버튼(open|waiting_client), 사용자 개설 세션 0질문 즉시 동결, waiting_client '이 정도면 진행'(clientDirective) 동결 버튼)** / **외부 고객 중계(ORG-003: 고객 명부 카드(등록·아카이브)·프로젝트 고객 선택·골/진화 세션 중계 override 셀렉트, 세션·요구사항 항목 '중계' 배지)**. 미구현: 직원 커스텀 지시 편집(EMP-001). 조직·사용자 ID 기반 로컬 단일 사용자 전제(localStorage `ac.*`), secret 표시 금지. 모바일 우선 반응형(하단 탭·카드·44px 터치). 프로젝트·업무 목록 API가 미구현이라 localStorage 보관 중 — 서버 목록 API(§17) 후 전환.
 
 ---
 

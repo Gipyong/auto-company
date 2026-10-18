@@ -4,6 +4,7 @@ import com.autocompany.entity.Artifact;
 import com.autocompany.entity.ClarificationSession;
 import com.autocompany.entity.ClarificationSession.AttachmentRef;
 import com.autocompany.entity.ClarificationSession.SessionStatus;
+import com.autocompany.entity.Client;
 import com.autocompany.entity.DiscussionMessage;
 import com.autocompany.entity.Employee;
 import com.autocompany.entity.JobGrade;
@@ -18,6 +19,7 @@ import com.autocompany.repository.JobGradeRepository;
 import com.autocompany.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -40,6 +42,7 @@ public class ClarificationSessionServiceTest {
     private DiscussionMessageRepository discussionMessageRepository;
     private ArtifactRepository artifactRepository;
     private ClarificationAttachmentParser attachmentParser;
+    private ClientService clientService;
     private ClarificationSessionService service;
 
     private UUID userId;
@@ -57,9 +60,10 @@ public class ClarificationSessionServiceTest {
         discussionMessageRepository = mock(DiscussionMessageRepository.class);
         artifactRepository = mock(ArtifactRepository.class);
         attachmentParser = new ClarificationAttachmentParser(); // 실제 파서 — 등급 게이트 포함
+        clientService = mock(ClientService.class);
         service = new ClarificationSessionService(sessionRepository, projectRepository,
                 employeeRepository, jobGradeRepository, discussionMessageRepository,
-                artifactRepository, attachmentParser);
+                artifactRepository, attachmentParser, clientService);
 
         userId = UUID.randomUUID();
         projectId = UUID.randomUUID();
@@ -403,5 +407,65 @@ public class ClarificationSessionServiceTest {
         when(sessionRepository.findById(missing)).thenReturn(Optional.empty());
 
         assertThrows(NoSuchElementException.class, () -> service.cancelSession(missing, userId));
+    }
+
+    // ==================== ORG-003 외부 고객 중계(§5.26) ====================
+
+    private Client activeClient(UUID clientId, String name) {
+        Client client = Client.builder().organizationId(UUID.randomUUID()).displayName(name).build();
+        client.setId(clientId);
+        return client;
+    }
+
+    @Test
+    void goalSessionInheritsProjectClientIdForRelay() {
+        UUID clientId = UUID.randomUUID();
+        project.setClientId(clientId);
+        when(clientService.requireActiveForRelay(clientId)).thenReturn(activeClient(clientId, "대박커머스"));
+        when(employeeRepository.findByUserIdAndRole(userId, Role.PLANNER)).thenReturn(List.of(planner));
+        when(jobGradeRepository.findById(leadGrade.getId())).thenReturn(Optional.of(leadGrade));
+        ArgumentCaptor<DiscussionMessage> captor = ArgumentCaptor.forClass(DiscussionMessage.class);
+
+        ClarificationSession session = service.openPipelineSession(projectId, userId, "상품 페이지 추가 요청");
+
+        assertEquals(clientId, session.getClientId()); // Project.client_id 상속(§5.26)
+        verify(discussionMessageRepository).save(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("대박커머스 중계")); // 중계 감사 문구
+        assertTrue(captor.getValue().getContent().contains("원문 보존"));
+    }
+
+    @Test
+    void goalSessionClientIdOverrideTakesPrecedenceOverProject() {
+        UUID overrideId = UUID.randomUUID(); // Project.client_id는 null
+        when(clientService.requireActiveForRelay(overrideId)).thenReturn(activeClient(overrideId, "미니샵"));
+        when(employeeRepository.findByUserIdAndRole(userId, Role.PLANNER)).thenReturn(List.of(planner));
+        when(jobGradeRepository.findById(leadGrade.getId())).thenReturn(Optional.of(leadGrade));
+
+        ClarificationSession session = service.openPipelineSession(
+                projectId, userId, "골", List.of(), overrideId);
+
+        assertEquals(overrideId, session.getClientId()); // 세션 생성 API override
+    }
+
+    @Test
+    void userSessionInheritsProjectClientId() {
+        UUID clientId = UUID.randomUUID();
+        project.setClientId(clientId);
+        when(clientService.requireActiveForRelay(clientId)).thenReturn(activeClient(clientId, "고객A"));
+
+        ClarificationSession session = service.openUserSession(projectId, userId, "요금제 수정", List.of());
+
+        assertEquals(clientId, session.getClientId());
+    }
+
+    @Test
+    void archivedClientRelayIsRejected() {
+        UUID clientId = UUID.randomUUID();
+        when(clientService.requireActiveForRelay(clientId)).thenThrow(
+                new IllegalStateException("Archived client cannot be used for new relays (§5.26: 409)"));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.openUserSession(projectId, userId, "수정", List.of(), clientId));
+        verify(sessionRepository, never()).save(any());
     }
 }

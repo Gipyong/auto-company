@@ -4,6 +4,7 @@ import com.autocompany.entity.Artifact;
 import com.autocompany.entity.ClarificationSession;
 import com.autocompany.entity.ClarificationSession.AttachmentRef;
 import com.autocompany.entity.ClarificationSession.SessionStatus;
+import com.autocompany.entity.Client;
 import com.autocompany.entity.DiscussionMessage;
 import com.autocompany.entity.Employee;
 import com.autocompany.entity.JobGrade;
@@ -51,6 +52,7 @@ public class ClarificationSessionService {
     private final DiscussionMessageRepository discussionMessageRepository;
     private final ArtifactRepository artifactRepository;
     private final ClarificationAttachmentParser attachmentParser;
+    private final ClientService clientService;
 
     /** §28.7(1) 첨부 입력 — MVP는 contentBase64만 지원(§28.7-6) */
     public record AttachmentInput(String filename, String mediaType, Long sizeBytes,
@@ -59,12 +61,19 @@ public class ClarificationSessionService {
 
     @Transactional
     public ClarificationSession openPipelineSession(UUID projectId, UUID userId, String goalText) {
-        return openPipelineSession(projectId, userId, goalText, List.of());
+        return openPipelineSession(projectId, userId, goalText, List.of(), null);
     }
 
     @Transactional
     public ClarificationSession openPipelineSession(UUID projectId, UUID userId,
                                                     String goalText, List<AttachmentInput> attachments) {
+        return openPipelineSession(projectId, userId, goalText, attachments, null);
+    }
+
+    /** clientIdOverride=null이면 Project.client_id 상속(§5.26); 지정 시 active 클라이언트만(archived 409) */
+    @Transactional
+    public ClarificationSession openPipelineSession(UUID projectId, UUID userId, String goalText,
+                                                    List<AttachmentInput> attachments, UUID clientIdOverride) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new java.util.NoSuchElementException("Project not found: " + projectId));
 
@@ -75,6 +84,7 @@ public class ClarificationSessionService {
         if (owner == null || !userId.equals(owner.getId())) {
             throw new IllegalArgumentException("Only the project owner can submit the goal");
         }
+        Client relayClient = resolveRelayClient(project, clientIdOverride); // §5.26 중계 연결
         // §28.7(1): 텍스트·첨부 둘 다 비면 400
         if ((goalText == null || goalText.isBlank()) && (attachments == null || attachments.isEmpty())) {
             throw new IllegalArgumentException("goalText or attachments is required (§28.7: min 1 of 2, 400)");
@@ -105,6 +115,7 @@ public class ClarificationSessionService {
                 .sessionNumber(nextNumber)
                 .status(SessionStatus.OPEN)
                 .openedByEmployeeId(openerId)
+                .clientId(relayClient == null ? null : relayClient.getId())
                 .parentSessionId(previous == null ? null : previous.getId()) // §28.6 진화 승계
                 .attachments(refs)
                 .build();
@@ -115,7 +126,8 @@ public class ClarificationSessionService {
                 .project(project)
                 .senderEmployeeId(openerId)
                 .content("요구 명확화 세션 #" + nextNumber + " 개설 — 골 협의 개시"
-                        + (saved.isEmpty() ? "" : " (첨부 " + saved.size() + "건 접수, Artifact 보존 §28.7)"))
+                        + (saved.isEmpty() ? "" : " (첨부 " + saved.size() + "건 접수, Artifact 보존 §28.7)")
+                        + relaySuffix(relayClient))
                 .messageType(MessageType.DISCUSSION)
                 .build());
         logParseSummary(project, openerId, saved);
@@ -216,6 +228,13 @@ public class ClarificationSessionService {
     @Transactional
     public ClarificationSession openUserSession(UUID projectId, UUID userId,
                                                 String changeNote, List<AttachmentInput> attachments) {
+        return openUserSession(projectId, userId, changeNote, attachments, null);
+    }
+
+    /** clientIdOverride=null이면 Project.client_id 상속(§5.26) */
+    @Transactional
+    public ClarificationSession openUserSession(UUID projectId, UUID userId, String changeNote,
+                                                List<AttachmentInput> attachments, UUID clientIdOverride) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new java.util.NoSuchElementException("Project not found: " + projectId));
         if (userId == null) {
@@ -225,6 +244,7 @@ public class ClarificationSessionService {
         if (owner == null || !userId.equals(owner.getId())) {
             throw new IllegalArgumentException("Only the project owner can open a clarification session (§28.6)");
         }
+        Client relayClient = resolveRelayClient(project, clientIdOverride); // §5.26 중계 연결
         if ((changeNote == null || changeNote.isBlank()) && (attachments == null || attachments.isEmpty())) {
             throw new IllegalArgumentException("changeNote or attachments is required (§28.7: min 1 of 2, 400)");
         }
@@ -249,6 +269,7 @@ public class ClarificationSessionService {
                 .sessionNumber(nextNumber)
                 .status(SessionStatus.OPEN)
                 .openedByUserId(userId) // 파이프라인 개설(opened_by_employee_id)과 구분(§28.6)
+                .clientId(relayClient == null ? null : relayClient.getId())
                 .parentSessionId(previous == null ? null : previous.getId()) // 진화 승계
                 .attachments(refs)
                 .build();
@@ -261,12 +282,27 @@ public class ClarificationSessionService {
                     .project(project)
                     .senderEmployeeId(recorder)
                     .content("사용자 개설 세션 #" + nextNumber + " — 변경 요청 접수(§28.6 진화, 개설 취지 원문 보존"
-                            + (saved.isEmpty() ? "" : ", 첨부 " + saved.size() + "건") + ")")
+                            + (saved.isEmpty() ? "" : ", 첨부 " + saved.size() + "건") + ")"
+                            + relaySuffix(relayClient))
                     .messageType(MessageType.DISCUSSION)
                     .build());
             logParseSummary(project, recorder, saved);
         }
         return session;
+    }
+
+    // ==================== REQ-005 여파·ORG-003 중계 (§5.26) ====================
+
+    /** 중계 대상 해석 — override 우선, 없으면 Project.client_id 상속; archived 연결은 409 */
+    private Client resolveRelayClient(Project project, UUID clientIdOverride) {
+        UUID clientId = clientIdOverride != null ? clientIdOverride : project.getClientId();
+        return clientId == null ? null : clientService.requireActiveForRelay(clientId);
+    }
+
+    /** 중계 감사 문구(§5.26) — 세션 개설·동결 로그에 원문 보존을 남긴다 */
+    private String relaySuffix(Client relayClient) {
+        return relayClient == null ? ""
+                : " — 외부 고객 " + relayClient.getDisplayName() + " 중계, 원문 보존(§5.26)";
     }
 
     /** 세션 취소 — 고객 포지션 사용자(Audit), open|waiting_client만 가능(§28.6; frozen·review 이후 불가) */

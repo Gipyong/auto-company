@@ -92,6 +92,7 @@ const state = {
   gradeMap: {},
   providers: [],
   profiles: [],
+  clients: [], // §5.26 외부 고객 명부(중계)
   projects: loadLS(LS_KEYS.projects, []),
   tasks: loadLS(LS_KEYS.tasks, []),
   tab: "setup",
@@ -129,11 +130,12 @@ async function refreshAll() {
   const settle = async (p) => {
     try { return await p; } catch (e) { return { __error: e }; }
   };
-  const [emps, grades, provs, profs] = await Promise.all([
+  const [emps, grades, provs, profs, clients] = await Promise.all([
     settle(api("GET", `/api/v1/employees?userId=${encodeURIComponent(userId)}`)),
     settle(api("GET", `/api/v1/grades?organizationId=${encodeURIComponent(organizationId)}`)),
     settle(api("GET", `/api/v1/model-providers?organizationId=${encodeURIComponent(organizationId)}`)),
     settle(api("GET", `/api/v1/model-profiles?organizationId=${encodeURIComponent(organizationId)}`)),
+    settle(api("GET", `/api/v1/clients?organizationId=${encodeURIComponent(organizationId)}`)),
   ]);
 
   if (emps.__error) {
@@ -154,11 +156,13 @@ async function refreshAll() {
   state.grades.forEach((g) => { state.gradeMap[g.id] = g; });
   state.providers = provs.__error ? [] : provs;
   state.profiles = profs.__error ? [] : profs;
+  state.clients = clients.__error ? [] : clients;
 
   renderEmployees();
   renderGrades();
   renderProviders();
   renderProfiles();
+  renderClients();
   renderSelects();
   renderProjects();
   renderTasks();
@@ -596,7 +600,7 @@ function renderProjects() {
   list.innerHTML = state.projects.length
     ? state.projects.map((p) => `
         <div class="item">
-          <div class="title">${esc(p.name)}</div>
+          <div class="title">${esc(p.name)} ${p.clientId ? `<span class="badge indigo">고객 ${esc(clientName(p.clientId))}</span>` : ""}</div>
           <div class="sub">${esc(p.description || "")} · ${fmtDate(p.createdAt)}</div>
           <div class="sub">ID: ${esc(p.id)}</div>
         </div>`).join("")
@@ -629,8 +633,9 @@ async function createProject() {
   try {
     const p = await api("POST", "/api/v1/projects", {
       userId: state.ctx.userId, name, description: $("#projDesc").value.trim() || null,
+      clientId: ($("#projClient") || {}).value || null,
     });
-    state.projects.push({ id: p.id, name: p.name, description: p.description, createdAt: new Date().toISOString() });
+    state.projects.push({ id: p.id, name: p.name, description: p.description, clientId: p.clientId, createdAt: new Date().toISOString() });
     persist();
     $("#projName").value = ""; $("#projDesc").value = "";
     toast("프로젝트를 생성했습니다.");
@@ -779,6 +784,72 @@ const SESSION_BADGE = {
 };
 const statusBadge = (s) => `<span class="badge ${SESSION_BADGE[s] || ""}">${esc(s)}</span>`;
 
+/* ==================== 외부 고객 (중계, §5.26) ==================== */
+
+function clientName(id) {
+  const c = (state.clients || []).find((x) => x.id === id);
+  return c ? c.displayName : String(id || "-").slice(0, 8);
+}
+
+function renderClients() {
+  const list = $("#clientList");
+  if (!list) return;
+  const items = state.clients || [];
+  list.innerHTML = items.length
+    ? items.map((c) => `
+        <div class="item ${c.status === "ARCHIVED" ? "dim" : ""}">
+          <div class="title">${esc(c.displayName)}
+            ${c.status === "ARCHIVED" ? '<span class="badge">아카이브</span>' : '<span class="badge green">활성</span>'}
+          </div>
+          <div class="sub">${esc(c.contact || "연락처 없음")} · 등록 ${fmtDate(c.createdAt)}</div>
+          ${c.status !== "ARCHIVED"
+            ? `<button class="btn ghost small" data-archive-client="${esc(c.id)}">아카이브</button>`
+            : ""}
+        </div>`).join("")
+    : `<div class="item"><div class="sub">등록된 외부 고객이 없습니다. 위에서 중계할 고객을 등록하세요.</div></div>`;
+}
+
+async function saveClient() {
+  if (!requireCtx()) return;
+  const displayName = $("#clientName").value.trim();
+  if (!displayName) { toast("고객 표시 이름을 입력하세요.", "err"); return; }
+  const btn = $("#btnClientSave");
+  busy(btn, true);
+  try {
+    await api("POST", "/api/v1/clients", {
+      organizationId: state.ctx.organizationId,
+      displayName,
+      contact: $("#clientContact").value.trim() || null,
+      createdByUserId: state.ctx.userId,
+    });
+    $("#clientName").value = "";
+    $("#clientContact").value = "";
+    $("#clientResult").textContent = `고객 등록 완료: ${displayName}`;
+    $("#clientResult").className = "status ok";
+    toast("외부 고객을 등록했습니다.");
+    await refreshAll();
+  } catch (e) {
+    $("#clientResult").textContent = `실패: ${e.message}`;
+    $("#clientResult").className = "status err";
+    toast(e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function archiveClient(id) {
+  const c = (state.clients || []).find((x) => x.id === id);
+  if (!confirm(`'${c ? c.displayName : id}' 고객을 아카이브할까요?\n기존 중계 기록은 보존되며, 신규 중계 연결은 차단됩니다. (§5.26)`)) return;
+  try {
+    await api("PATCH", `/api/v1/clients/${id}`, { status: "archived" });
+    toast("고객을 아카이브했습니다.");
+    await refreshAll();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+
 async function loadPendingSessions() {
   if (!state.ctx) { state.pendingSessions = []; renderInbox(); return; }
   try {
@@ -852,6 +923,7 @@ async function submitGoal() {
       userId: state.ctx.userId,
       goalText: goalText || null,
       attachments,
+      clientId: ($("#goalClient") || {}).value || null,
     });
     const parsed = (s.attachments || []).map((a) => `${a.filename}=${a.parseStatus}`).join(", ") || "없음";
     $("#goalResult").textContent = `세션 #${s.sessionNumber} 생성 — 첨부 ${s.attachments.length}개: ${parsed}`;
@@ -908,7 +980,8 @@ function renderSessionDetail() {
   $("#sessionDetailBody").innerHTML = `
     <div class="sub">상태 ${statusBadge(s.status)} · 생성 ${fmtDate(s.createdAt)} · 질문 상한 ${s.maxQuestions}</div>
     <div class="sub">개설 ${userOpened ? '<span class="badge">사용자 개설 (진화, §28.6)</span>' : "파이프라인"}
-      ${s.parentSessionId ? " · 이전 세션과 연결됨" : ""}</div>
+      ${s.parentSessionId ? " · 이전 세션과 연결됨" : ""}
+      ${s.clientId ? `<span class="badge indigo">중계: ${esc(clientName(s.clientId))}</span>` : ""}</div>
     ${s.goalText ? `<div class="sub">${userOpened ? "변경 요청" : "골"}: ${esc(s.goalText)}</div>` : `<div class="sub">첨부 중심 접수 (§28.7-1)</div>`}
     ${(s.attachments || []).length
       ? `<div class="chips">${s.attachments.map((a) => {
@@ -1135,6 +1208,7 @@ async function openEvolutionSession() {
       userId: state.ctx.userId,
       changeNote: changeNote || null,
       attachments,
+      clientId: ($("#evoClient") || {}).value || null,
     });
     $("#evoResult").textContent = `세션 #${s.sessionNumber} 개설 — 이전 세션에 연결(진화)`;
     $("#evoResult").className = "status ok";
@@ -1185,7 +1259,8 @@ function renderRequirementSet(r) {
       ${list.length
         ? `<div class="list">${list.map((i) => `
             <div class="item ${dimAssumption && i.source === "assumption" ? "dim" : ""}">
-              <div class="title">${esc(i.title)} ${dimAssumption && i.source === "assumption" ? '<span class="badge amber">가정</span>' : ""}</div>
+              <div class="title">${esc(i.title)} ${dimAssumption && i.source === "assumption" ? '<span class="badge amber">가정</span>' : ""}
+                ${i.source === "client_relayed" ? '<span class="badge indigo">중계</span>' : ""}</div>
               <div class="sub">${esc(i.detail || "")}</div>
               ${i.evidence ? `<div class="sub">근거: ${esc(i.evidence)}</div>` : ""}
             </div>`).join("")}</div>`
@@ -1217,6 +1292,11 @@ function renderSelects() {
   const projItems = state.projects.map((p) => ({ value: p.id, label: p.name }));
   const taskItems = state.tasks.slice().reverse().map((t) => ({ value: t.id, label: t.title }));
   const profItems = state.profiles.map((p) => ({ value: p.id, label: profileLabel(p) }));
+  // §5.26 중계 연결은 활성 고객만 — 아카이브 고객은 서버에서 409
+  const clientItems = state.clients
+    .filter((c) => c.status !== "ARCHIVED")
+    .map((c) => ({ value: c.id, label: c.displayName }));
+  const inheritLabel = "(자동 — 프로젝트 고객 상속)";
 
   fillSelect("#empGradeSelect", [{ value: "", label: "(미배정)" }, ...gradeItems], "(미배정)");
   fillSelect("#profProvider", state.providers.map((p) => ({ value: p.id, label: p.name })), "Provider 없음");
@@ -1230,6 +1310,9 @@ function renderSelects() {
   fillSelect("#msgTarget", empItems, "직원 없음");
   fillSelect("#goalProject", projItems, "프로젝트 없음");
   fillSelect("#sessionProject", projItems, "프로젝트 없음");
+  fillSelect("#projClient", [{ value: "", label: "(외부 고객 없음)" }, ...clientItems], "(외부 고객 없음)");
+  fillSelect("#goalClient", [{ value: "", label: inheritLabel }, ...clientItems], inheritLabel);
+  fillSelect("#evoClient", [{ value: "", label: inheritLabel }, ...clientItems], inheritLabel);
   // 프로필 풀 내보내기용 (사용처: renderPool — state.profiles 직접 사용)
   void profItems;
 }
@@ -1304,6 +1387,13 @@ function bindEvents() {
   $("#btnInboxRefresh").addEventListener("click", loadPendingSessions);
   $("#btnGoalSubmit").addEventListener("click", submitGoal);
   $("#goalFiles").addEventListener("change", renderGoalFileList);
+
+  // 외부 고객 (§5.26)
+  $("#btnClientSave").addEventListener("click", saveClient);
+  $("#clientList").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-archive-client]");
+    if (btn) archiveClient(btn.dataset.archiveClient);
+  });
   $("#btnSessionLoad").addEventListener("click", loadSessions);
   $("#btnSessionClose").addEventListener("click", () => {
     $("#sessionDetail").hidden = true;
@@ -1338,6 +1428,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   resetGradeForm();
   renderProjects();
   renderTasks();
+  renderClients();
   renderGoalFileList();
   if (state.ctx) await refreshAll();
   else renderInbox();

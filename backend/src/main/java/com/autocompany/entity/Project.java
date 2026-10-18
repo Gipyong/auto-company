@@ -23,6 +23,10 @@ public class Project {
     
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    // §5.26 외부 고객 연결 (null = 사용자 자신이 발주 고객 포지션); 세션 client_id가 상속
+    @Column(name = "client_id")
+    private UUID clientId;
     
     @Builder.Default
     private String status = "PLANNING"; // PLANNING, ACTIVE, TESTING, COMPLETED

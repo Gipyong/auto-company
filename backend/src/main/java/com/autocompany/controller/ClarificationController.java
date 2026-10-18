@@ -48,7 +48,8 @@ public class ClarificationController {
                 request.attachments() == null ? List.of() : request.attachments().stream()
                         .map(a -> new ClarificationSessionService.AttachmentInput(
                                 a.filename(), a.mediaType(), a.sizeBytes(), a.contentBase64(), a.contentUri()))
-                        .toList());
+                        .toList(),
+                request.clientId()); // §5.26 중계 override(없으면 Project 상속)
         return ResponseEntity.status(201).body(SessionResponse.from(session));
     }
 
@@ -66,7 +67,8 @@ public class ClarificationController {
                 request.attachments() == null ? List.of() : request.attachments().stream()
                         .map(a -> new ClarificationSessionService.AttachmentInput(
                                 a.filename(), a.mediaType(), a.sizeBytes(), a.contentBase64(), a.contentUri()))
-                        .toList());
+                        .toList(),
+                request.clientId());
         return ResponseEntity.status(201).body(SessionResponse.from(session));
     }
 
@@ -175,7 +177,7 @@ public class ClarificationController {
 
     // ==================== DTO ====================
 
-    public record GoalRequest(UUID userId, String goalText, List<AttachmentItem> attachments) {
+    public record GoalRequest(UUID userId, String goalText, List<AttachmentItem> attachments, UUID clientId) {
     }
 
     /** §28.7(1) 첨부 입력 — MVP는 contentBase64만 지원(§28.7-6) */
@@ -184,7 +186,7 @@ public class ClarificationController {
     }
 
     /** REQ-005 §28.6(b) 사용자 개설 세션 — 개설 취지/변경 요청 원문(불변) 또는 첨부 최소 1개 */
-    public record OpenSessionRequest(UUID userId, String changeNote, List<AttachmentItem> attachments) {
+    public record OpenSessionRequest(UUID userId, String changeNote, List<AttachmentItem> attachments, UUID clientId) {
     }
 
     public record CancelRequest(UUID userId) {

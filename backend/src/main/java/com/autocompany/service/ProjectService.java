@@ -16,14 +16,25 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final EmployeeRepository employeeRepository;
     private final UserService userService;
+    private final ClientService clientService;
 
     @Transactional
     public Project createProject(UUID userId, String name, String description) {
+        return createProject(userId, name, description, null);
+    }
+
+    /** §5.26 clientId 연결 시 active 클라이언트만 허용(archived 409) — 중계 프로젝트 */
+    @Transactional
+    public Project createProject(UUID userId, String name, String description, UUID clientId) {
         User user = userService.getOrCreateLocalUser(userId);
+        if (clientId != null) {
+            clientService.requireActiveForRelay(clientId);
+        }
         Project project = Project.builder()
                 .user(user)
                 .name(name)
                 .description(description)
+                .clientId(clientId)
                 .status("PLANNING")
                 .build();
         return projectRepository.save(project);

@@ -58,7 +58,7 @@ public class ClarificationControllerIntegrationTest {
     @Test
     public void goalSubmissionReturns201WithSession() throws Exception {
         UUID projectId = UUID.randomUUID();
-        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘"), any()))
+        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘"), any(), any()))
                 .thenReturn(sampleSession(1, SessionStatus.OPEN));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
@@ -75,7 +75,7 @@ public class ClarificationControllerIntegrationTest {
         ClarificationSession session = sampleSession(1, SessionStatus.OPEN);
         session.setAttachments(java.util.List.of(new ClarificationSession.AttachmentRef(
                 UUID.randomUUID(), "text/markdown", "요구사항.md", 42L, "PARSED")));
-        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘"), any()))
+        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘"), any(), any()))
                 .thenReturn(session);
         String contentBase64 = java.util.Base64.getEncoder().encodeToString("회원가입, 로그인".getBytes());
 
@@ -91,9 +91,36 @@ public class ClarificationControllerIntegrationTest {
     }
 
     @Test
+    public void goalSubmissionWithClientIdPassesRelayOverride() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        when(sessionService.openPipelineSession(eq(projectId), any(), eq("블로그 사이트 만들어줘"), any(), eq(clientId)))
+                .thenReturn(sampleSession(1, SessionStatus.OPEN));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"goalText\":\"블로그 사이트 만들어줘\","
+                                + "\"clientId\":\"" + clientId + "\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    public void goalSubmissionArchivedClientRelayReturns409() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("Archived client cannot be used for new relays (§5.26: 409)"));
+
+        mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + UUID.randomUUID() + "\",\"goalText\":\"골\","
+                                + "\"clientId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     public void goalSubmissionMissingFieldsReturns400() throws Exception {
         UUID projectId = UUID.randomUUID();
-        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any()))
+        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("goalText or attachments is required (§28.7: min 1 of 2, 400)"));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
@@ -105,7 +132,7 @@ public class ClarificationControllerIntegrationTest {
     @Test
     public void goalSubmissionNeitherTextNorAttachmentsReturns400() throws Exception {
         UUID projectId = UUID.randomUUID();
-        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any()))
+        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("goalText or attachments is required (§28.7: min 1 of 2, 400)"));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
@@ -117,7 +144,7 @@ public class ClarificationControllerIntegrationTest {
     @Test
     public void duplicateActiveGoalReturns409() throws Exception {
         UUID projectId = UUID.randomUUID();
-        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any()))
+        when(sessionService.openPipelineSession(eq(projectId), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("Active clarification session already exists"));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/goal", projectId)
@@ -173,7 +200,7 @@ public class ClarificationControllerIntegrationTest {
         UUID projectId = UUID.randomUUID();
         ClarificationSession session = sampleSession(2, SessionStatus.OPEN);
         session.setOpenedByUserId(UUID.randomUUID());
-        when(sessionService.openUserSession(eq(projectId), any(), eq("요금제 문구 수정"), any()))
+        when(sessionService.openUserSession(eq(projectId), any(), eq("요금제 문구 수정"), any(), any()))
                 .thenReturn(session);
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/clarification-sessions", projectId)
@@ -187,7 +214,7 @@ public class ClarificationControllerIntegrationTest {
     @Test
     public void userSessionOpenWhileActiveReturns409() throws Exception {
         UUID projectId = UUID.randomUUID();
-        when(sessionService.openUserSession(eq(projectId), any(), any(), any()))
+        when(sessionService.openUserSession(eq(projectId), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("Active clarification session already exists for project (§28.6: 409)"));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/clarification-sessions", projectId)

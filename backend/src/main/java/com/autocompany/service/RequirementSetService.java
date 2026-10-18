@@ -5,9 +5,11 @@ import com.autocompany.entity.ClarificationQuestion.AnswerStatus;
 import com.autocompany.entity.ClarificationQuestion.QuestionType;
 import com.autocompany.entity.ClarificationSession;
 import com.autocompany.entity.ClarificationSession.SessionStatus;
+import com.autocompany.entity.Client;
 import com.autocompany.entity.DiscussionMessage;
 import com.autocompany.entity.RequirementSet;
 import com.autocompany.entity.enums.MessageType;
+import com.autocompany.repository.ClientRepository;
 import com.autocompany.repository.ClarificationQuestionRepository;
 import com.autocompany.repository.ClarificationSessionRepository;
 import com.autocompany.repository.DiscussionMessageRepository;
@@ -41,6 +43,7 @@ public class RequirementSetService {
     private final ObjectMapper objectMapper;
     private final com.autocompany.repository.ArtifactRepository artifactRepository;
     private final ClarificationReviewChainService reviewChainService;
+    private final ClientRepository clientRepository;
 
     public record RequirementItem(String title, String detail, String source, String evidence, UUID questionId) {
     }
@@ -106,7 +109,7 @@ public class RequirementSetService {
             throw new IllegalStateException("Unanswered required questions remain");
         }
 
-        RequirementContent content = buildContent(session, questions);
+        RequirementContent content = buildContent(session, questions, resolveRelayClient(session));
         int version = nextVersion(session.getProject().getId());
         supersedePrevious(session.getProject().getId());
 
@@ -144,11 +147,29 @@ public class RequirementSetService {
             discussionMessageRepository.save(DiscussionMessage.builder()
                     .project(session.getProject())
                     .senderEmployeeId(logSender)
-                    .content("요구 사항 동결 — RequirementSet v" + version + " (§28.6 불변)")
+                    .content("요구 사항 동결 — RequirementSet v" + version + " (§28.6 불변)"
+                            + relayAuditSuffix(session))
                     .messageType(MessageType.DISCUSSION)
                     .build());
         }
         return new FrozenOutcome(set, content);
+    }
+
+    // ==================== ORG-003 중계 (§5.26) ====================
+
+    /** 기존 연결은 아카이브 후에도 기록 보존을 위해 조회만 한다(신규 연결 검증은 서비스 진입점에서) */
+    private Client resolveRelayClient(ClarificationSession session) {
+        if (session.getClientId() == null) {
+            return null;
+        }
+        return clientRepository.findById(session.getClientId()).orElse(null);
+    }
+
+    /** 동결 감사 로그 — 중계 세션은 원문 보존·client_relayed 기록을 남긴다(§5.26) */
+    private String relayAuditSuffix(ClarificationSession session) {
+        Client relayClient = resolveRelayClient(session);
+        return relayClient == null ? ""
+                : " — 외부 고객 " + relayClient.getDisplayName() + " 중계 기록(client_relayed), 원문 보존(§5.26)";
     }
 
     // ==================== 누적 기록 (§17) ====================
@@ -169,16 +190,22 @@ public class RequirementSetService {
 
     // ==================== 내부 ====================
 
-    private RequirementContent buildContent(ClarificationSession session, List<ClarificationQuestion> questions) {
+    private RequirementContent buildContent(ClarificationSession session, List<ClarificationQuestion> questions,
+                                            Client relayClient) {
         List<RequirementItem> functional = new ArrayList<>();
         List<RequirementItem> nonFunctional = new ArrayList<>();
         List<RequirementItem> constraints = new ArrayList<>();
         List<RequirementItem> outOfScope = new ArrayList<>();
         List<RequirementItem> openRisks = new ArrayList<>();
 
+        // §5.25·§5.26: 운영자가 외부 고객 의견을 전달한 세션은 고객 원천 항목을 client_relayed로 기록
+        String clientSource = relayClient == null ? "client_declared" : "client_relayed";
+        String answerSource = relayClient == null ? "client_answered" : "client_relayed";
+        String relayEvidence = relayClient == null ? "" : "외부 고객 " + relayClient.getDisplayName() + " 중계 — ";
+
         String goal = session.getGoalText();
         if (goal != null && !goal.isBlank()) {
-            functional.add(new RequirementItem("초기 목표", truncate(goal), "client_declared", "goal_text 원문", null));
+            functional.add(new RequirementItem("초기 목표", truncate(goal), clientSource, relayEvidence + "goal_text 원문", null));
         }
 
         StringBuilder freeText = new StringBuilder();
@@ -198,43 +225,43 @@ public class RequirementSetService {
                     String value = firstValue(q);
                     String label = labelFor(q, value);
                     if (label != null) {
-                        functional.add(new RequirementItem("확정 범위", "시작 수준 — " + label, "client_answered", evidence, q.getId()));
+                        functional.add(new RequirementItem("확정 범위", "시작 수준 — " + label, answerSource, relayEvidence + evidence, q.getId()));
                         if ("mvp".equals(value)) {
                             outOfScope.add(new RequirementItem("1차 이후 확장", "해결하지 않은 편의·확장 항목은 차기 세션에서 반영", "employee_derived", evidence, q.getId()));
                         }
                     } else if (q.getOtherText() != null) {
                         // 기타(Other) 경로 — §28.3: 기타는 항상 제공
-                        functional.add(new RequirementItem("확정 범위", "직접 응답 — " + truncate(q.getOtherText()), "client_answered", evidence, q.getId()));
+                        functional.add(new RequirementItem("확정 범위", "직접 응답 — " + truncate(q.getOtherText()), answerSource, relayEvidence + evidence, q.getId()));
                     }
                 }
                 case MULTI_CHOICE -> {
                     for (String value : q.getSelectedValues()) {
                         String label = labelFor(q, value);
                         if (label != null) {
-                            functional.add(new RequirementItem("기능", label, "client_answered", evidence, q.getId()));
+                            functional.add(new RequirementItem("기능", label, answerSource, relayEvidence + evidence, q.getId()));
                         }
                     }
                 }
                 case SHORT_TEXT -> {
-                    constraints.add(new RequirementItem("제약", itemText(q), "client_answered", evidence, q.getId()));
+                    constraints.add(new RequirementItem("제약", itemText(q), answerSource, relayEvidence + evidence, q.getId()));
                     if (q.getOtherText() != null && !q.getOtherText().isBlank()) {
                         freeText.append("\n").append(q.getOtherText());
                     }
                 }
                 case FREE_TEXT -> {
-                    constraints.add(new RequirementItem("고객 명시 요구", itemText(q), "client_declared", evidence, q.getId()));
+                    constraints.add(new RequirementItem("고객 명시 요구", itemText(q), clientSource, relayEvidence + evidence, q.getId()));
                     if (q.getOtherText() != null && !q.getOtherText().isBlank()) {
                         freeText.append("\n").append(q.getOtherText());
                     }
                 }
-                case NUMBER_RANGE -> constraints.add(new RequirementItem("규모", "확정 예상 규모: " + q.getNumericAnswer(), "client_answered", evidence, q.getId()));
+                case NUMBER_RANGE -> constraints.add(new RequirementItem("규모", "확정 예상 규모: " + q.getNumericAnswer(), answerSource, relayEvidence + evidence, q.getId()));
             }
         }
 
-        // §28.2 signals → 명시 제약(client_declared) 기록. 암묵 재평가·무시 금지.
+        // §28.2 signals → 명시 제약(client_declared; 중계 세션은 client_relayed) 기록. 암묵 재평가·무시 금지.
         // §28.7-4(REQ-004): 파싱된 첨부 텍스트도 출처별 판정 — 항목 근거에 첨부 파일 참조를 남긴다.
-        recordSourceSignals(session, goal, "goal_text", functional, nonFunctional, constraints);
-        recordSourceSignals(session, freeText.toString(), "답변 기타", functional, nonFunctional, constraints);
+        recordSourceSignals(session, goal, "goal_text", functional, nonFunctional, constraints, clientSource, relayEvidence);
+        recordSourceSignals(session, freeText.toString(), "답변 기타", functional, nonFunctional, constraints, clientSource, relayEvidence);
         if (session.getAttachments() != null && !session.getAttachments().isEmpty()) {
             java.util.Map<UUID, String> filenameByArtifact = new java.util.HashMap<>();
             for (ClarificationSession.AttachmentRef ref : session.getAttachments()) {
@@ -247,7 +274,7 @@ public class RequirementSetService {
             for (com.autocompany.entity.Artifact artifact : artifactRepository.findAllById(parsedIds)) {
                 recordSourceSignals(session, artifact.getParsedText(),
                         "첨부 " + filenameByArtifact.getOrDefault(artifact.getId(), artifact.getId().toString()) + " 파일",
-                        functional, nonFunctional, constraints);
+                        functional, nonFunctional, constraints, clientSource, relayEvidence);
             }
         }
         return new RequirementContent(functional, nonFunctional, constraints, outOfScope, openRisks);
@@ -255,15 +282,15 @@ public class RequirementSetService {
 
     private void recordSourceSignals(ClarificationSession session, String text, String evidenceLabel,
                                      List<RequirementItem> functional, List<RequirementItem> nonFunctional,
-                                     List<RequirementItem> constraints) {
+                                     List<RequirementItem> constraints, String clientSource, String relayEvidence) {
         if (text == null || text.isBlank()) {
             return;
         }
         for (ClarificationExpertSignalDetector.ExpertSignal s : signalDetector.detect(text)) {
             switch (s.domain()) {
-                case TECH_STACK -> constraints.add(new RequirementItem("기술 스택 제약", "고객이 제시한 방식 수용: " + s.evidence(), "client_declared", evidenceLabel, null));
-                case SECURITY -> nonFunctional.add(new RequirementItem("보안 요건", "고객 명시 신호: " + s.evidence(), "client_declared", evidenceLabel, null));
-                case BUDGET -> constraints.add(new RequirementItem("비용 제약", "고객 발화 신호: " + s.evidence(), "client_declared", evidenceLabel, null));
+                case TECH_STACK -> constraints.add(new RequirementItem("기술 스택 제약", "고객이 제시한 방식 수용: " + s.evidence(), clientSource, relayEvidence + evidenceLabel, null));
+                case SECURITY -> nonFunctional.add(new RequirementItem("보안 요건", "고객 명시 신호: " + s.evidence(), clientSource, relayEvidence + evidenceLabel, null));
+                case BUDGET -> constraints.add(new RequirementItem("비용 제약", "고객 발화 신호: " + s.evidence(), clientSource, relayEvidence + evidenceLabel, null));
                 default -> { /* 디자인/UX/연동/기능 신호는 상위 답변 근거로 충족 — 중복 기록 생략 */ }
             }
         }
