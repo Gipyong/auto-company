@@ -411,3 +411,61 @@ textarea { resize: vertical; }
   .center-view { padding: 16px; }
   main { padding: 0; }
 }
+
+/* ==================== Master-Detail Layout (직원 탭) ==================== */
+.master-detail-layout {
+  display: flex;
+  gap: 16px;
+  min-height: calc(100vh - 120px);
+}
+
+.master-panel {
+  width: 380px;
+  flex-shrink: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow-y: auto;
+  height: calc(100vh - 120px);
+  position: sticky;
+  top: 80px;
+}
+
+.detail-panel {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+}
+
+.center-welcome {
+  text-align: center;
+  padding: 48px 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.center-welcome h3 { margin: 0 0 8px; font-size: 20px; }
+.center-welcome .hint { margin-bottom: 24px; }
+.welcome-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+.team-lead-row, .team-feedback-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.team-lead-row label { margin-bottom: 6px; }
+.team-lead-row select { max-width: 280px; }
+
+@media (max-width: 1024px) {
+  .master-detail-layout { flex-direction: column; }
+  .master-panel { width: 100%; height: auto; position: static; }
+  .detail-panel { padding: 0; }
+}
+
+@media (max-width: 899px) {
+  .master-panel { padding: 12px; }
+  .detail-panel { padding: 0; }
+}
