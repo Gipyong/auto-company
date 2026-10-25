@@ -251,7 +251,8 @@ export default function GradesTab() {
       </div>
 
       {showForm ? (
-        <div className="card" ref={formRef}>
+        <div className="modal-backdrop" onClick={() => { setShowForm(false); resetGradeForm(); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} ref={formRef}>
           <div className="row between">
             <h2 id="gradeFormTitle">
               {editingGrade ? `직급 수정 — ${editingGrade.code} ${editingGrade.name}` : "직급 추가"}
@@ -286,11 +287,13 @@ export default function GradesTab() {
           <button id="btnGradeSave" className="btn primary" disabled={saving} onClick={saveGrade}>
             저장
           </button>
+          </div>
         </div>
       ) : null}
 
       {poolGradeId && poolGrade ? (
-        <div className="card" id="poolPanel">
+        <div className="modal-backdrop" onClick={() => setPoolGradeId(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} id="poolPanel">
           <div className="row between">
             <h2>
               모델 풀 — <span id="poolGradeName">{poolGrade.code} {poolGrade.name}</span>
@@ -349,6 +352,7 @@ export default function GradesTab() {
             풀 저장
           </button>
         </div>
+      </div>
       ) : null}
     </>
   );

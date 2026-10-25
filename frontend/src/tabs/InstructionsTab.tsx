@@ -403,22 +403,6 @@ export default function InstructionsTab() {
           </div>
         ) : null}
 
-        {/* 지시 창구 (축약) */}
-        <div className="local-sidebar-section">
-          <div className="local-sidebar-title">지시 창구</div>
-          <textarea
-            id="sidebarPrompt"
-            ref={promptRef}
-            rows={3}
-            placeholder="하고 싶은 일을 적고 [지시하기]..."
-          />
-          <div className="local-sidebar-row">
-            <button className="btn ghost small" disabled={busy} onClick={ask}>묻기</button>
-            <button className="btn primary small" disabled={busy} onClick={submitInstruction}>지시하기</button>
-          </div>
-          {askResult && <StatusText kind={askResult.kind}>{askResult.text}</StatusText>}
-        </div>
-
         {/* 프로젝트 목록 */}
         <div className="local-sidebar-section">
           <div className="local-sidebar-row between">
@@ -501,7 +485,6 @@ export default function InstructionsTab() {
         ) : null}
       </aside>
 
-      {/* ==================== 중앙 포커스 뷰 ==================== */}
       <main className="center-view">
         {centerView.type === "welcome" && (
           <div className="center-welcome">
@@ -568,6 +551,23 @@ export default function InstructionsTab() {
             onClose={closeCenterView}
           />
         )}
+
+        {/* 하단 프롬프트 입력 */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', background: 'var(--card)' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+            <textarea
+              ref={promptRef}
+              rows={2}
+              placeholder="하고 싶은 일을 적고 [지시하기]..."
+              style={{ flex: 1, minHeight: 60, resize: 'vertical', fontSize: 15 }}
+            />
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button className="btn ghost small" disabled={busy} onClick={ask}>묻기</button>
+              <button className="btn primary small" disabled={busy} onClick={submitInstruction}>지시하기</button>
+            </div>
+          </div>
+          {askResult && <StatusText kind={askResult.kind}>{askResult.text}</StatusText>}
+        </div>
       </main>
     </div>
   );
